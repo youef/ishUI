@@ -14,11 +14,13 @@ import textwrap
 import json
 import socket
 import re
+import tarfile
+import zipfile
 from pathlib import Path
 from datetime import datetime
 
 APP_NAME = "ISH UI"
-VERSION = "2.0.0"
+VERSION = "3.0.0"
 AUTHOR = "يوسف الحازمي"
 REPO = "https://github.com/youef/ishUI"
 CONFIG_DIR = Path.home() / ".config" / "ishui"
@@ -160,6 +162,12 @@ def dashboard():
     item(6, "معلومات النظام", "تفاصيل بيئة التشغيل")
     item(7, "تحديث ISH UI", "التحديث من GitHub")
     item(8, "الإعدادات", "الألوان والساعة")
+    item(9, "محرر النصوص", "إنشاء وتحرير ملفات نصية")
+    item(10, "مدير العمليات", "عرض العمليات وإيقافها")
+    item(11, "مدير الخدمات", "خدمات OpenRC في Alpine")
+    item(12, "النسخ الاحتياطي", "إنشاء واستعادة نسخة مضغوطة")
+    item(13, "مدير الأرشيف", "ZIP و TAR")
+    item(14, "فحص النظام", "تشخيص الأدوات والبيئة")
     item(0, "خروج")
     line()
 
@@ -482,7 +490,251 @@ def settings():
         print(color("تم حفظ الإعدادات.", GREEN))
         pause()
 
+
+
+def text_editor():
+    while True:
+        header("محرر النصوص")
+        raw = ask("  مسار الملف (q للرجوع): ")
+        if raw.lower() in ("q", "quit", "back"):
+            return
+        if not raw:
+            continue
+        path = Path(raw).expanduser()
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if path.exists() and (not path.is_file() or path.stat().st_size > 1024 * 1024):
+                raise ValueError("الملف ليس ملفاً عادياً أو يتجاوز 1MB.")
+            old = path.read_text(encoding="utf-8") if path.exists() else ""
+            header("تحرير: " + path.name)
+            print(color("  أدخل النص. اكتب .SAVE في سطر منفرد للحفظ أو .CANCEL للإلغاء.", DIM))
+            if old:
+                print(color("--- المحتوى الحالي ---", YELLOW))
+                print(old)
+                print(color("--- اكتب المحتوى الجديد بالكامل ---", YELLOW))
+            rows = []
+            while True:
+                try:
+                    row = input()
+                except (EOFError, KeyboardInterrupt):
+                    row = ".CANCEL"
+                if row == ".SAVE":
+                    break
+                if row == ".CANCEL":
+                    rows = None
+                    break
+                rows.append(row)
+            if rows is None:
+                print(color("تم إلغاء التعديل.", YELLOW))
+            else:
+                backup = path.with_name(path.name + ".bak")
+                if path.exists():
+                    shutil.copy2(str(path), str(backup))
+                path.write_text("\n".join(rows) + ("\n" if rows else ""), encoding="utf-8")
+                print(color("تم الحفظ." + (" مع نسخة .bak" if backup.exists() else ""), GREEN))
+        except Exception as exc:
+            print(color("تعذر تحرير الملف: " + str(exc), RED))
+        pause()
+
+
+def process_manager():
+    header("مدير العمليات")
+    show_result(run(["ps", "-o", "pid,ppid,stat,comm"], timeout=10), "لم تتوفر قائمة العمليات.")
+    line()
+    if confirm("هل تريد إرسال SIGTERM إلى عملية؟"):
+        raw = ask("رقم PID: ")
+        if not raw.isdigit() or int(raw) <= 1 or int(raw) == os.getpid():
+            print(color("رقم PID غير صالح أو محمي.", RED))
+        else:
+            try:
+                os.kill(int(raw), 15)
+                print(color("أُرسلت إشارة SIGTERM.", GREEN))
+            except ProcessLookupError:
+                print(color("العملية غير موجودة.", YELLOW))
+            except PermissionError:
+                print(color("لا تملك صلاحية إيقاف هذه العملية.", RED))
+            except Exception as exc:
+                print(color(str(exc), RED))
+    pause()
+
+
+def service_manager():
+    header("مدير خدمات OpenRC")
+    if not shutil.which("rc-service"):
+        print(color("rc-service غير متاح في هذه البيئة.", YELLOW))
+        pause()
+        return
+    show_result(run(["rc-status"], timeout=10), "لا توجد معلومات خدمات.")
+    operation = ask("الإجراء (start/stop/restart) أو q: ").lower()
+    if operation == "q":
+        return
+    if operation not in ("start", "stop", "restart"):
+        print(color("إجراء غير صالح.", RED))
+        pause()
+        return
+    service = ask("اسم الخدمة: ")
+    if not re.fullmatch(r"[A-Za-z0-9_.@-]{1,80}", service):
+        print(color("اسم خدمة غير صالح.", RED))
+        pause()
+        return
+    if confirm("تنفيذ " + operation + " للخدمة " + service + "؟"):
+        result = subprocess.run(["rc-service", service, operation])
+        print(color("نجحت العملية." if result.returncode == 0 else "فشلت العملية.", GREEN if result.returncode == 0 else RED))
+    pause()
+
+
+def backup_manager():
+    backup_dir = Path.home() / "ishui-backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    header("النسخ الاحتياطي")
+    print("  [1] إنشاء نسخة من ملف/مجلد")
+    print("  [2] عرض النسخ")
+    print("  [3] استعادة نسخة")
+    print("  [0] رجوع")
+    choice = ask("  اختيارك: ")
+    if choice == "0":
+        return
+    files = sorted(backup_dir.glob("*.tar.gz"))
+    if choice == "2":
+        for p in files:
+            print(" ", p.name, "-", p.stat().st_size, "bytes")
+        if not files:
+            print(color("لا توجد نسخ احتياطية.", DIM))
+        pause()
+        return
+    if choice == "1":
+        target = Path(ask("المسار المراد نسخه داخل مجلد المستخدم: ")).expanduser()
+        if not target.is_absolute():
+            target = Path.cwd() / target
+        try:
+            resolved = target.resolve(strict=True)
+            home = Path.home().resolve()
+            if resolved != home and home not in resolved.parents:
+                raise ValueError("النسخ محصور داخل مجلد المستخدم.")
+            if resolved == backup_dir.resolve() or backup_dir.resolve() in resolved.parents:
+                raise ValueError("لا يمكن نسخ مجلد النسخ الاحتياطية إلى نفسه.")
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            archive = backup_dir / ("ishui-backup-" + stamp + ".tar.gz")
+            with tarfile.open(str(archive), "w:gz") as tar:
+                tar.add(str(resolved), arcname=resolved.relative_to(home).as_posix() or ".")
+            print(color("تم إنشاء النسخة: " + str(archive), GREEN))
+        except Exception as exc:
+            print(color("فشل النسخ: " + str(exc), RED))
+    elif choice == "3":
+        for i, p in enumerate(files, 1):
+            print(f"  {i}. {p.name}")
+        raw = ask("رقم النسخة: ")
+        if not raw.isdigit() or not 1 <= int(raw) <= len(files):
+            return
+        try:
+            with tarfile.open(str(files[int(raw) - 1]), "r:gz") as tar:
+                home = Path.home().resolve()
+                safe = []
+                for member in tar.getmembers():
+                    dest = (home / member.name).resolve()
+                    if (dest == home or home in dest.parents) and (member.isfile() or member.isdir()):
+                        safe.append(member)
+                print("عدد العناصر الآمنة:", len(safe))
+                if confirm("قد تستبدل الاستعادة ملفات موجودة. متابعة؟"):
+                    tar.extractall(str(home), members=safe)
+                    print(color("اكتملت الاستعادة.", GREEN))
+        except Exception as exc:
+            print(color("فشلت الاستعادة: " + str(exc), RED))
+    pause()
+
+
+def archive_manager():
+    header("مدير ZIP")
+    print("  [1] إنشاء ZIP")
+    print("  [2] استخراج ZIP")
+    print("  [3] عرض المحتويات")
+    choice = ask("  اختيارك (q للرجوع): ")
+    if choice.lower() == "q":
+        return
+    try:
+        if choice == "1":
+            source = Path(ask("المسار: ")).expanduser()
+            if not source.is_absolute():
+                source = Path.cwd() / source
+            output = Path(ask("اسم ملف ZIP: ")).expanduser()
+            if not output.is_absolute():
+                output = Path.cwd() / output
+            if not source.exists() or output.suffix.lower() != ".zip":
+                raise ValueError("تحقق من المسار وامتداد ZIP.")
+            with zipfile.ZipFile(str(output), "w", zipfile.ZIP_DEFLATED) as zf:
+                if source.is_dir():
+                    for p in source.rglob("*"):
+                        if p.is_file():
+                            zf.write(str(p), str(p.relative_to(source.parent)))
+                else:
+                    zf.write(str(source), source.name)
+            print(color("تم إنشاء الأرشيف.", GREEN))
+        elif choice in ("2", "3"):
+            archive = Path(ask("مسار ZIP: ")).expanduser()
+            if not archive.is_absolute():
+                archive = Path.cwd() / archive
+            with zipfile.ZipFile(str(archive), "r") as zf:
+                if choice == "3":
+                    for name in zf.namelist()[:300]:
+                        print(" ", name)
+                else:
+                    destination = Path(ask("مجلد الاستخراج: ")).expanduser()
+                    if not destination.is_absolute():
+                        destination = Path.cwd() / destination
+                    destination.mkdir(parents=True, exist_ok=True)
+                    root = destination.resolve()
+                    safe = [n for n in zf.namelist() if (root / n).resolve() == root or root in (root / n).resolve().parents]
+                    if confirm("استخراج " + str(len(safe)) + " ملف إلى " + str(root) + "؟"):
+                        for name in safe:
+                            zf.extract(name, str(root))
+                        print(color("تم الاستخراج.", GREEN))
+        else:
+            print(color("اختيار غير صالح.", RED))
+    except Exception as exc:
+        print(color("تعذر التعامل مع الأرشيف: " + str(exc), RED))
+    pause()
+
+
+def system_diagnostics():
+    header("فحص النظام")
+    checks = [
+        ("Python 3", shutil.which("python3")),
+        ("Git", shutil.which("git")),
+        ("apk", shutil.which("apk")),
+        ("Ping", shutil.which("ping")),
+        ("OpenRC", shutil.which("rc-service")),
+        ("مجلد المستخدم قابل للكتابة", os.access(Path.home(), os.W_OK)),
+    ]
+    for label, value in checks:
+        ok = bool(value)
+        print("  " + color("✓" if ok else "—", GREEN if ok else YELLOW) + " " + label +
+              ((" : " + str(value)) if isinstance(value, str) else ""))
+    try:
+        socket.getaddrinfo("github.com", 443)
+        print(color("  ✓ DNS إلى GitHub يعمل", GREEN))
+    except Exception:
+        print(color("  — تعذر حل github.com؛ تحقق من الشبكة وDNS", YELLOW))
+    print(color("  قد تختلف النتائج حسب إصدار iSH وصلاحياته.", DIM))
+    pause()
+
+
 def main():
+    if len(sys.argv) > 1:
+        arg = sys.argv[1]
+        if arg in ("--version", "-v"):
+            print(APP_NAME, VERSION, "-", AUTHOR)
+            return
+        if arg in ("--help", "-h"):
+            print("ISH UI " + VERSION + " | --help --version --doctor --backup")
+            return
+        if arg == "--doctor":
+            system_diagnostics()
+            return
+        if arg == "--backup":
+            backup_manager()
+            return
     actions = {
         "1": package_manager,
         "2": file_manager,
@@ -492,6 +744,12 @@ def main():
         "6": system_info,
         "7": update_project,
         "8": settings,
+        "9": text_editor,
+        "10": process_manager,
+        "11": service_manager,
+        "12": backup_manager,
+        "13": archive_manager,
+        "14": system_diagnostics,
     }
     while True:
         dashboard()
