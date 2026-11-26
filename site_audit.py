@@ -351,7 +351,7 @@ def create_job(host, scheme):
     con.commit(); con.close()
     return job_id
 
-def batch_scan(primary, scope, use_provider):
+def batch_scan(primary, primary_scheme, scope, use_provider):
     try:
         addresses = resolve_public(primary)
     except Exception as exc:
@@ -370,9 +370,7 @@ def batch_scan(primary, scope, use_provider):
         print("\nسيتم فحص النطاق الأساسي فقط. أضف النطاقات الأخرى لقائمة التصريح إذا كانت ضمن ملكيتك/تصريحك.")
     for host in selected:
         try:
-            scheme = "https"
-            if host == primary:
-                scheme = "https"
+            scheme = primary_scheme if host == primary else "https"
             # Require fresh public DNS validation for every selected hostname.
             resolve_public(host)
             job_id = create_job(host, scheme)
@@ -409,7 +407,7 @@ def run():
         if choice != "1":
             print("اختيار غير صحيح."); continue
         try:
-            primary, _ = normalize_host(input("أدخل النطاق الأساسي: "))
+            primary, primary_scheme = normalize_host(input("أدخل النطاق الأساسي: "))
             scope = load_scope()
             if not scope:
                 print("أول تشغيل: أدخل جميع النطاقات التي تملكها أو لديك تصريح مكتوب لفحصها.")
@@ -425,7 +423,7 @@ def run():
             if primary not in scope:
                 scope.append(primary)
                 save_scope(scope)
-            batch_scan(primary, scope, use_provider)
+            batch_scan(primary, primary_scheme, scope, use_provider)
         except KeyboardInterrupt:
             print("\nتم الإلغاء.")
         except Exception as exc:
