@@ -4,7 +4,6 @@
 import json
 import os
 import re
-import secrets
 import shutil
 import socket
 import sqlite3
@@ -16,13 +15,11 @@ from urllib.parse import urlparse
 
 BASE = Path.home() / ".config" / "ishui"
 REPORTS = BASE / "reports"
-TOKEN_FILE = BASE / "web_console.json"
 HOST = "127.0.0.1"
 PORTS = range(8765, 8771)
 MAX_REQUEST = 16384
 MAX_OUTPUT = 12000
 _SERVER = None
-_TOKEN = None
 
 PAGE = r"""<!doctype html>
 <html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -42,9 +39,8 @@ button{background:#1768a8;border:0;font-weight:650;cursor:pointer}button.seconda
 nav{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}nav button{width:auto;padding:8px 13px}
 section{margin:14px 0}.hidden{display:none}.status{color:#8ce0b2}.danger{color:#ffc28b}small{color:#91a4c2}
 </style></head><body>
-<header><h1>ISH UI <span style="color:#71c7ff">/ WEB CONTROL</span></h1><p>لوحة إدارة محلية — الجلسة محمية برمز وصول</p></header>
-<main><div id="login" class="card"><h2>فتح لوحة التحكم</h2><p class="muted">أدخل رمز الوصول الظاهر داخل واجهة iSH.</p><input id="token" type="password" placeholder="رمز الوصول"><button onclick="login()">دخول</button><div id="loginmsg" class="muted"></div></div>
-<div id="app" class="hidden">
+<header><h1>ISH UI <span style="color:#71c7ff">/ WEB CONTROL</span></h1><p>لوحة إدارة محلية — متاحة مباشرة على هذا الجهاز</p></header>
+<main><div id="app">
 <nav><button onclick="show('home')">الرئيسية</button><button onclick="show('tools')">الأدوات والأوامر</button><button onclick="show('audit')">فحص النطاق</button><button onclick="show('reports')">التقارير</button></nav>
 <section id="home"><div class="grid"><div class="card"><h2>حالة الخادم</h2><div class="stat status" id="server">متصل</div><div class="muted" id="sys"></div></div><div class="card"><h2>المهام المحفوظة</h2><div class="stat" id="jobs">—</div><div class="muted">مهام الفحص في قاعدة البيانات المحلية</div></div><div class="card"><h2>التقارير</h2><div class="stat" id="reportcount">—</div><div class="muted">ملفات JSON المحفوظة</div></div></div><div class="card" style="margin-top:14px"><h2>آخر التقارير</h2><div id="recent" class="list"></div></div></section>
 <section id="tools" class="hidden"><div class="grid"><div class="card"><h2>أوامر النظام المسموحة</h2><p class="muted">قائمة محددة فقط؛ لا يوجد تنفيذ shell عشوائي من المتصفح.</p><select id="cmd"><option value="system">ملخص النظام والتخزين</option><option value="processes">العمليات</option><option value="network">معلومات الشبكة</option><option value="packages">الحزم المثبتة</option></select><button onclick="runCommand()">تنفيذ</button><div id="cmdout" class="out"></div></div>
@@ -54,9 +50,7 @@ section{margin:14px 0}.hidden{display:none}.status{color:#8ce0b2}.danger{color:#
 <section id="reports" class="hidden"><div class="card"><h2>مكتبة التقارير</h2><button class="secondary" onclick="loadReports()">تحديث القائمة</button><div id="reportlist" class="list"></div><pre id="reportview" class="out"></pre></div></section>
 </div></main>
 <script>
-let auth=sessionStorage.getItem('ishui_token')||'';
-async function api(path,body){let r=await fetch(path,{method:body?'POST':'GET',headers:{'Authorization':'Bearer '+auth,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});let j=await r.json();if(!r.ok)throw Error(j.error||'Request failed');return j}
-function login(){auth=document.getElementById('token').value.trim();api('/api/status').then(()=>{sessionStorage.setItem('ishui_token',auth);document.getElementById('login').classList.add('hidden');document.getElementById('app').classList.remove('hidden');refresh()}).catch(e=>document.getElementById('loginmsg').textContent=e.message)}
+async function api(path,body){let r=await fetch(path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});let j=await r.json();if(!r.ok)throw Error(j.error||'Request failed');return j}
 function show(id){document.querySelectorAll('main section').forEach(x=>x.classList.add('hidden'));document.getElementById(id).classList.remove('hidden');if(id==='reports')loadReports()}
 function put(id,v){document.getElementById(id).textContent=v}
 async function refresh(){try{let s=await api('/api/status');put('sys',s.platform+' · Python '+s.python+' · '+s.storage);put('jobs',s.jobs);put('reportcount',s.reports);let r=await api('/api/reports');renderRecent(r.files.slice(0,5))}catch(e){put('server','غير متاح')}}
@@ -67,25 +61,8 @@ async function installPackage(){if(!document.getElementById('installconfirm').ch
 async function startAudit(){try{let r=await api('/api/audit',{domain:document.getElementById('domain').value});put('auditout','بدأت المهمة #'+r.job_id+' للنطاق '+r.domain+'. راجع التقارير بعد اكتمالها.')}catch(e){put('auditout',e.message)}}
 async function loadReports(){try{let r=await api('/api/reports');let el=document.getElementById('reportlist');el.innerHTML='';r.files.forEach(f=>{let b=document.createElement('button');b.className='secondary';b.textContent=f.name;b.onclick=()=>viewReport(f.name);el.appendChild(b)})}catch(e){put('reportview',e.message)}}
 async function viewReport(name){try{let r=await api('/api/report',{name});put('reportview',JSON.stringify(r.report,null,2))}catch(e){put('reportview',e.message)}}
-if(auth){document.getElementById('token').value=auth;login()}
+refresh()
 </script></body></html>"""
-
-def _token():
-    BASE.mkdir(parents=True, exist_ok=True)
-    try:
-        data = json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
-        value = data.get("token")
-        if isinstance(value, str) and len(value) >= 32:
-            return value
-    except Exception:
-        pass
-    value = secrets.token_urlsafe(32)
-    TOKEN_FILE.write_text(json.dumps({"token": value}), encoding="utf-8")
-    try:
-        TOKEN_FILE.chmod(0o600)
-    except OSError:
-        pass
-    return value
 
 def _run(args, timeout=20):
     try:
@@ -152,7 +129,7 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError("صيغة الطلب غير صالحة.")
         return value
     def _authorized(self):
-        return secrets.compare_digest(self.headers.get("Authorization", ""), "Bearer " + _TOKEN)
+        return True
     def do_GET(self):
         if self.path == "/":
             raw = PAGE.encode("utf-8")
@@ -163,8 +140,6 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(raw)
             return
-        if not self._authorized():
-            self._json(401, {"error": "رمز الوصول غير صحيح."}); return
         if self.path == "/api/status":
             self._json(200, _status())
         elif self.path == "/api/reports":
@@ -172,8 +147,6 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._json(404, {"error": "المسار غير موجود."})
     def do_POST(self):
-        if not self._authorized():
-            self._json(401, {"error": "رمز الوصول غير صحيح."}); return
         try:
             data = self._body()
             if self.path == "/api/command":
@@ -228,10 +201,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(405)
 
 def start():
-    global _SERVER, _TOKEN
+    global _SERVER
     if _SERVER is not None:
-        return _SERVER.server_address[1], _TOKEN
-    _TOKEN = _token()
+        return _SERVER.server_address[1], ""
     for port in PORTS:
         try:
             _SERVER = ThreadingHTTPServer((HOST, port), Handler)
