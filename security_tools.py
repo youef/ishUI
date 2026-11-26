@@ -220,7 +220,7 @@ def run():
             "5  URL Structure Analyzer",
             "6  SHA-256 File Hash",
             "7  Password Strength Auditor",
-            "8  محرك فحص المواقع المصرح بها (قابل للاستئناف)",
+            "8  فحص النطاقات دفعة واحدة (اكتشاف + فحص + تقرير)",
             "0  رجوع",
         ]
         for label in labels:
