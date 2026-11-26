@@ -1053,6 +1053,99 @@ def system_diagnostics():
     pause()
 
 
+def theme_manager():
+    while True:
+        header("الثيمات")
+        keys = list(THEMES.keys())
+        for i, key in enumerate(keys, 1):
+            current = "  ✓ الحالي" if CONFIG.get("theme") == key else ""
+            print("  " + str(i) + ". " + THEMES[key]["name"] + current)
+        print("  0. رجوع")
+        choice = ask("  اختر الثيم: ")
+        if choice == "0":
+            return
+        if choice.isdigit() and 1 <= int(choice) <= len(keys):
+            CONFIG["theme"] = keys[int(choice) - 1]
+            save_config()
+            print(color("تم تطبيق الثيم وحفظه.", GREEN))
+        else:
+            print(color("اختيار غير صحيح.", RED))
+        pause()
+
+
+def developer_tools():
+    """Small standard-library developer toolbox."""
+    while True:
+        header("صندوق أدوات المطورين")
+        item(1, "تنسيق JSON والتحقق منه")
+        item(2, "Base64 ترميز / فك ترميز")
+        item(3, "URL Encode / Decode")
+        item(4, "حساب SHA-256 و SHA-512")
+        item(5, "فك قراءة JWT محلياً")
+        item(6, "اختبار API بطلب GET محدود")
+        item(0, "رجوع")
+        choice = ask("  اختيارك: ")
+        if choice == "0":
+            return
+        if choice == "1":
+            try:
+                print(json.dumps(json.loads(ask("ألصق JSON: ")), ensure_ascii=False, indent=2))
+            except Exception as exc:
+                print(color("JSON غير صالح: " + str(exc), RED))
+        elif choice == "2":
+            raw = ask("النص أو Base64: ")
+            mode = ask("e للترميز أو d لفك الترميز: ").lower()
+            try:
+                if mode == "e":
+                    print(base64.b64encode(raw.encode("utf-8")).decode("ascii"))
+                elif mode == "d":
+                    print(base64.b64decode(raw.encode("ascii"), validate=True).decode("utf-8", errors="replace"))
+                else:
+                    print("اختيار غير صحيح.")
+            except Exception as exc:
+                print(color("تعذر التحويل: " + str(exc), RED))
+        elif choice == "3":
+            raw = ask("النص أو الرابط: ")
+            mode = ask("e للترميز أو d لفك الترميز: ").lower()
+            print(urllib.parse.quote(raw, safe="") if mode == "e" else urllib.parse.unquote(raw))
+        elif choice == "4":
+            raw = ask("النص: ").encode("utf-8")
+            print("SHA-256:", hashlib.sha256(raw).hexdigest())
+            print("SHA-512:", hashlib.sha512(raw).hexdigest())
+        elif choice == "5":
+            try:
+                parts = ask("JWT: ").split(".")
+                if len(parts) != 3:
+                    raise ValueError("JWT يجب أن يتكون من ثلاثة أجزاء.")
+                decoded = []
+                for part in parts[:2]:
+                    part += "=" * (-len(part) % 4)
+                    decoded.append(json.dumps(json.loads(base64.urlsafe_b64decode(part)), ensure_ascii=False, indent=2))
+                print("Header:\n" + decoded[0] + "\nPayload:\n" + decoded[1])
+                print(color("فك القراءة لا يتحقق من التوقيع أو الصلاحية.", YELLOW))
+            except Exception as exc:
+                print(color("تعذر تحليل JWT: " + str(exc), RED))
+        elif choice == "6":
+            raw = ask("رابط API (HTTPS مفضل): ")
+            try:
+                parsed = urllib.parse.urlsplit(raw)
+                if parsed.scheme not in ("https", "http") or not parsed.hostname or parsed.username or parsed.password:
+                    raise ValueError("رابط HTTP/HTTPS غير صالح أو يحتوي بيانات دخول.")
+                import urllib.request
+                req = urllib.request.Request(raw, headers={"User-Agent": "ISH-UI-DevTools/5.0", "Accept": "application/json"})
+                with urllib.request.urlopen(req, timeout=8) as response:
+                    body = response.read(65536).decode("utf-8", errors="replace")
+                    print("HTTP", response.status, "|", response.headers.get("Content-Type", ""))
+                    try:
+                        print(json.dumps(json.loads(body), ensure_ascii=False, indent=2)[:12000])
+                    except Exception:
+                        print(body[:12000])
+            except Exception as exc:
+                print(color("فشل طلب API: " + str(exc), RED))
+        else:
+            print(color("اختيار غير صحيح.", RED))
+        pause()
+
 def main():
     if len(sys.argv) > 1:
         arg = sys.argv[1]
@@ -1085,6 +1178,8 @@ def main():
         "13": archive_manager,
         "14": update_project,
         "15": settings,
+        "16": developer_tools,
+        "17": theme_manager,
     }
     while True:
         dashboard()
