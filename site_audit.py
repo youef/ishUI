@@ -6,6 +6,7 @@ import json
 import os
 import re
 import socket
+import sys
 import sqlite3
 import ssl
 import time
@@ -412,4 +413,7 @@ def run():
         print("تعذر بدء الفحص:", str(exc)[:200])
 
 if __name__ == "__main__":
-    run()
+    if len(sys.argv) == 3 and sys.argv[1] == "--job" and sys.argv[2].isdigit():
+        audit(int(sys.argv[2]))
+    else:
+        run()
