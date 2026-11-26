@@ -215,4 +215,4 @@ def start():
     _SERVER.daemon_threads = True
     thread = threading.Thread(target=_SERVER.serve_forever, name="ishui-web", daemon=True)
     thread.start()
-    return _SERVER.server_address[1], _TOKEN
+    return _SERVER.server_address[1], ""
