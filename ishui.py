@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import datetime
 
 APP_NAME = "ISH UI"
-VERSION = "5.0.0"
+VERSION = "5.1.0"
 AUTHOR = "يوسف الحازمي"
 REPO = "https://github.com/youef/ishUI"
 CONFIG_DIR = Path.home() / ".config" / "ishui"
@@ -72,6 +72,7 @@ THEMES = {
 }
 
 def color(value, shade=WHITE):
+    """Apply foreground colors only; never paint the entire iSH terminal."""
     if not CONFIG.get("colors", True):
         return str(value)
     theme = THEMES.get(CONFIG.get("theme", "ocean"), THEMES["ocean"])
@@ -79,16 +80,14 @@ def color(value, shade=WHITE):
     key = next((name for code, name in shade_map.items() if code in shade), None)
     emphasis = "".join(code for code in (BOLD, DIM) if code in shade)
     foreground = theme.get(key, "") if key else ""
-    mode = CONFIG.get("background_mode", "dark")
-    background = "\033[40m" if mode == "dark" else ("\033[47m" if mode == "light" else "")
-    if mode == "light" and key == "white":
+    if CONFIG.get("background_mode") == "light" and key == "white":
         foreground = "\033[30m"
-    return emphasis + background + foreground + str(value) + RESET + background
+    return emphasis + foreground + str(value) + RESET
 
 def clear():
-    mode = CONFIG.get("background_mode", "dark")
-    background = "\033[40m" if mode == "dark" else ("\033[47m" if mode == "light" else "\033[0m")
-    sys.stdout.write(background + "\033[2J\033[H")
+    # Reset terminal attributes before clearing so no stale background color
+    # can turn the whole iSH viewport into a solid black/white rectangle.
+    sys.stdout.write("\033[0m\033[2J\033[H")
     sys.stdout.flush()
 
 def width():
@@ -166,7 +165,7 @@ def welcome_screen():
     frames = ["◐", "◓", "◑", "◒"]
     print()
     print(color("  ╔══════════════════════════════════╗", BOLD + CYAN))
-    print(color("  ║             ISH UI 5.0           ║", BOLD + CYAN))
+    print(color("  ║             ISH UI 5.1           ║", BOLD + CYAN))
     print(color("  ╚══════════════════════════════════╝", BOLD + CYAN))
     print()
     print(color("       أهلاً بك في مركز أدوات iSH", BOLD + WHITE))
