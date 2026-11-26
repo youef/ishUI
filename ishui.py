@@ -841,7 +841,7 @@ def website_inspector():
     def fetch(url, method="GET", timeout=10):
         request = urllib.request.Request(
             url, method=method,
-            headers={"User-Agent": "ISH-UI-Security-Audit/4.0",
+            headers={"User-Agent": "ISH-UI-Security-Audit/5.0",
                      "Accept": "*/*"})
         try:
             return urllib.request.urlopen(request, timeout=timeout)
