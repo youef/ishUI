@@ -45,7 +45,7 @@ def line(char="─"):
 
 def pause():
     try:
-        input(color("\\nاضغط Enter للمتابعة...", DIM))
+        input(color("\nاضغط Enter للمتابعة...", DIM))
     except (EOFError, KeyboardInterrupt):
         pass
 
@@ -142,7 +142,7 @@ def package_manager():
                 confirm = input(color("قد يتم تحديث عدة حزم. متابعة؟ (y/N): ", YELLOW)).lower()
                 if confirm != "y":
                     continue
-            print(color("\\nجاري التنفيذ...\\n", YELLOW))
+            print(color("\nجاري التنفيذ...\n", YELLOW))
             subprocess.run(args)
         elif choice in ("3", "4", "5"):
             name = input(color("  اسم الحزمة: ", CYAN)).strip()
@@ -214,7 +214,7 @@ def file_browser():
                 for row in data.splitlines()[:300]:
                     print(row[:terminal_width()])
                 if len(data.splitlines()) > 300:
-                    print(color("\\n... تم اختصار العرض", DIM))
+                    print(color("\n... تم اختصار العرض", DIM))
             except Exception as exc:
                 print(color("تعذر فتح الملف: " + str(exc), RED))
             pause()
@@ -238,7 +238,7 @@ def command_runner():
             # Run through the user's shell so pipes, redirects and shell syntax work.
             subprocess.run(command, shell=True, executable="/bin/sh")
         except KeyboardInterrupt:
-            print(color("\\nتم إيقاف الأمر.", YELLOW))
+            print(color("\nتم إيقاف الأمر.", YELLOW))
         except Exception as exc:
             print(color("خطأ: " + str(exc), RED))
         pause()
@@ -318,4 +318,4 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         clear()
-        print(color("\\nتم إغلاق ISH UI.", YELLOW))
+        print(color("\nتم إغلاق ISH UI.", YELLOW))
