@@ -191,6 +191,14 @@ def password_audit():
     print("لا تحفظ هذه القيمة في سجل أو ملف.")
     pause()
 
+def resumable_site_audit():
+    try:
+        from site_audit import run as run_site_audit
+        run_site_audit()
+    except Exception as exc:
+        print("تعذر تشغيل محرك فحص المواقع:", str(exc))
+        pause()
+
 def run():
     actions = {
         "1": dns_lookup,
@@ -200,6 +208,7 @@ def run():
         "5": url_inspector,
         "6": hash_file,
         "7": password_audit,
+        "8": resumable_site_audit,
     }
     while True:
         title("الأدوات")
@@ -211,6 +220,7 @@ def run():
             "5  URL Structure Analyzer",
             "6  SHA-256 File Hash",
             "7  Password Strength Auditor",
+            "8  محرك فحص المواقع المصرح بها (قابل للاستئناف)",
             "0  رجوع",
         ]
         for label in labels:
