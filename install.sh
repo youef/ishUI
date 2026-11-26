@@ -16,7 +16,10 @@ if ! command -v python3 >/dev/null 2>&1; then
   fi
 fi
 
-# Create a small launcher that always points to this checkout.
+if [ ! -d "$APP_DIR/.git" ]; then
+  echo "Note: this is not a Git checkout; in-app updates will be unavailable."
+fi
+
 cat > "$BIN_DIR/ishui" <<EOF
 #!/bin/sh
 exec python3 "$APP_DIR/ishui.py" "\$@"
@@ -30,8 +33,6 @@ if ! grep -Fq '.local/bin' "$PROFILE"; then
 fi
 
 echo ""
-echo "ISH UI installed successfully."
-echo "Run this once if the command is not found in the current session:"
-echo 'export PATH="$HOME/.local/bin:$PATH"'
-echo "Then launch with: ishui"
-echo ""
+echo "ISH UI 3.0 installed."
+echo 'If needed, run: export PATH="$HOME/.local/bin:$PATH"'
+echo "Launch with: ishui"
