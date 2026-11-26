@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import datetime
 
 APP_NAME = "ISH UI"
-VERSION = "5.5.0"
+VERSION = "5.6.0"
 AUTHOR = "يوسف الحازمي"
 REPO = "https://github.com/youef/ishUI"
 CONFIG_DIR = Path.home() / ".config" / "ishui"
@@ -1254,7 +1254,13 @@ def main():
         choice = ask("  اختيارك: ")
         if choice == "0":
             clear()
-            print(color("شكراً لاستخدام ISH UI — يوسف الحازمي", CYAN))
+            print(color("لوحة التحكم النصية مغلقة؛ خادم الويب سيبقى عاملاً.", CYAN))
+            if WEB_SERVER_INFO:
+                try:
+                    from web_server import keep_alive
+                    keep_alive()
+                except KeyboardInterrupt:
+                    pass
             return
         action = actions.get(choice)
         if action:
