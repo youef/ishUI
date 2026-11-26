@@ -2,23 +2,28 @@
 # -*- coding: utf-8 -*-
 """
 ISH UI — يوسف الحازمي
-Interactive terminal control panel for iSH / Alpine Linux.
-Uses only Python standard library.
+A richer terminal control center for iSH / Alpine Linux.
+Python standard library only.
 """
-
 import os
 import sys
 import shutil
 import platform
 import subprocess
-import shlex
 import textwrap
+import json
+import socket
+import re
 from pathlib import Path
 from datetime import datetime
 
 APP_NAME = "ISH UI"
-VERSION = "1.0.0"
+VERSION = "2.0.0"
 AUTHOR = "يوسف الحازمي"
+REPO = "https://github.com/youef/ishUI"
+CONFIG_DIR = Path.home() / ".config" / "ishui"
+CONFIG_FILE = CONFIG_DIR / "config.json"
+HISTORY_FILE = CONFIG_DIR / "history.txt"
 
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -31,17 +36,40 @@ RED = "\033[91m"
 MAGENTA = "\033[95m"
 WHITE = "\033[97m"
 
-def color(text, shade=WHITE):
-    return shade + str(text) + RESET
+def load_config():
+    defaults = {"colors": True, "show_clock": True}
+    try:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        if CONFIG_FILE.exists():
+            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                defaults.update({k: v for k, v in data.items() if k in defaults})
+    except Exception:
+        pass
+    return defaults
+
+CONFIG = load_config()
+
+def save_config():
+    try:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        CONFIG_FILE.write_text(json.dumps(CONFIG, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as exc:
+        print("تعذر حفظ الإعدادات: " + str(exc))
+
+def color(value, shade=WHITE):
+    if not CONFIG.get("colors", True):
+        return str(value)
+    return shade + str(value) + RESET
 
 def clear():
     os.system("clear" if os.name != "nt" else "cls")
 
-def terminal_width():
-    return max(48, min(shutil.get_terminal_size((80, 24)).columns, 100))
+def width():
+    return max(44, min(shutil.get_terminal_size((80, 24)).columns, 100))
 
 def line(char="─"):
-    print(color(char * terminal_width(), BLUE))
+    print(color(char * width(), BLUE))
 
 def pause():
     try:
@@ -49,207 +77,354 @@ def pause():
     except (EOFError, KeyboardInterrupt):
         pass
 
-def safe_run(args, timeout=20):
+def ask(prompt):
     try:
-        return subprocess.run(
-            args, text=True, stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, timeout=timeout
-        )
+        return input(color(prompt, CYAN)).strip()
+    except (EOFError, KeyboardInterrupt):
+        return ""
+
+def confirm(prompt):
+    return ask(prompt + " (y/N): ").lower() == "y"
+
+def run(args, timeout=25):
+    try:
+        return subprocess.run(args, text=True, stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, timeout=timeout)
     except FileNotFoundError:
         return None
     except subprocess.TimeoutExpired:
-        print(color("انتهت مهلة تنفيذ الأمر.", RED))
+        print(color("انتهت مهلة تنفيذ العملية.", RED))
         return None
     except Exception as exc:
-        print(color("تعذر تنفيذ الأمر: " + str(exc), RED))
+        print(color("خطأ: " + str(exc), RED))
         return None
 
-def get_storage():
+def show_result(result, empty="لا توجد بيانات لعرضها."):
+    if result is None:
+        print(color("الأداة المطلوبة غير مثبتة أو غير متاحة.", RED))
+    elif result.stdout.strip():
+        print(result.stdout.rstrip())
+    else:
+        print(color(empty, DIM))
+
+def disk_usage():
     try:
-        usage = shutil.disk_usage(str(Path.home()))
-        return usage
+        return shutil.disk_usage(str(Path.home()))
     except Exception:
         return None
 
-def header():
+def header(section="مركز التحكم"):
     clear()
-    width = terminal_width()
-    print(color("╔" + "═" * (width - 2) + "╗", CYAN))
-    title = "ISH UI  •  iSH CONTROL CENTER"
-    print(color("║", CYAN) + color(title.center(width - 2), BOLD + WHITE) + color("║", CYAN))
-    subtitle = "يوسف الحازمي  |  الإصدار " + VERSION
-    print(color("║", CYAN) + color(subtitle.center(width - 2), MAGENTA) + color("║", CYAN))
-    print(color("╚" + "═" * (width - 2) + "╝", CYAN))
-    print(color("  " + datetime.now().strftime("%Y-%m-%d  %H:%M"), DIM))
+    w = width()
+    print(color("╔" + "═" * (w - 2) + "╗", CYAN))
+    print(color("║", CYAN) + color(" ISH UI  •  iSH CONTROL CENTER ".center(w - 2), BOLD + WHITE) + color("║", CYAN))
+    sub = "يوسف الحازمي  |  v" + VERSION + "  |  " + section
+    print(color("║", CYAN) + color(sub.center(w - 2), MAGENTA) + color("║", CYAN))
+    print(color("╚" + "═" * (w - 2) + "╝", CYAN))
+    if CONFIG.get("show_clock", True):
+        print(color("  " + datetime.now().strftime("%Y-%m-%d  %H:%M:%S"), DIM))
     line()
 
-def menu_item(number, title, description=""):
-    left = color(" [" + str(number) + "] ", CYAN + BOLD)
-    print(left + color(title, WHITE) + (color(" — " + description, DIM) if description else ""))
+def item(number, title, detail=""):
+    print(color("  [" + str(number) + "] ", BOLD + CYAN) + color(title, WHITE) +
+          (color("  ·  " + detail, DIM) if detail else ""))
+
+def storage_summary():
+    usage = disk_usage()
+    if not usage or not usage.total:
+        return "غير متاح", 0
+    used = usage.used / usage.total * 100
+    return f"{usage.used // (1024**2)} / {usage.total // (1024**2)} MB", used
 
 def dashboard():
     header()
-    storage = get_storage()
-    print(color("  لوحة التحكم الرئيسية", BOLD + GREEN))
-    print()
-    print("  " + color("النظام:", CYAN), platform.system(), platform.release())
-    print("  " + color("المعمارية:", CYAN), platform.machine())
-    print("  " + color("Python:", CYAN), platform.python_version())
-    print("  " + color("المستخدم:", CYAN), os.environ.get("USER", "unknown"))
-    print("  " + color("المجلد:", CYAN), str(Path.home()))
-    if storage:
-        used = storage.used / storage.total * 100 if storage.total else 0
-        print("  " + color("التخزين:", CYAN),
-              f"{storage.used // (1024**2)} MB مستخدم / {storage.total // (1024**2)} MB")
-        bar_width = 28
-        filled = int(bar_width * used / 100)
-        bar = "█" * filled + "░" * (bar_width - filled)
-        print("  [" + color(bar, GREEN if used < 80 else YELLOW) + f"] {used:.1f}%")
+    storage, percent = storage_summary()
+    print(color("  نظرة عامة", BOLD + GREEN))
+    print("  النظام       :", platform.system(), platform.release())
+    print("  المعمارية    :", platform.machine())
+    print("  Python       :", platform.python_version())
+    print("  المستخدم     :", os.environ.get("USER", "unknown"))
+    print("  مساحة التخزين:", storage)
+    bar_len = 25
+    filled = int(bar_len * percent / 100)
+    bar = "█" * filled + "░" * (bar_len - filled)
+    print("  [" + color(bar, GREEN if percent < 80 else YELLOW) + f"] {percent:.1f}%")
     print()
     line()
-    print(color("  اختر إحدى الأدوات:", BOLD + WHITE))
-    menu_item(1, "إدارة الحزم", "تحديث وتثبيت وحذف حزم Alpine")
-    menu_item(2, "مستكشف الملفات", "عرض المجلدات والملفات وقراءة النصوص")
-    menu_item(3, "منفذ الأوامر", "تشغيل أوامر Linux")
-    menu_item(4, "معلومات النظام", "تفاصيل بيئة iSH")
-    menu_item(5, "تحديث المشروع", "جلب آخر نسخة من GitHub")
-    menu_item(0, "خروج", "إغلاق الواجهة")
+    print(color("  الأدوات", BOLD + WHITE))
+    item(1, "مدير الحزم", "تثبيت / حذف / بحث / تحديث")
+    item(2, "مستكشف الملفات", "إنشاء وقراءة ونسخ ونقل وحذف")
+    item(3, "طرفية الأوامر", "سجل أوامر ودعم أوامر shell")
+    item(4, "مراقبة النظام", "العمليات والذاكرة والتخزين")
+    item(5, "أدوات الشبكة", "عنوان IP وDNS وPing")
+    item(6, "معلومات النظام", "تفاصيل بيئة التشغيل")
+    item(7, "تحديث ISH UI", "التحديث من GitHub")
+    item(8, "الإعدادات", "الألوان والساعة")
+    item(0, "خروج")
     line()
 
 def package_manager():
     while True:
-        header()
-        print(color("  مدير الحزم Alpine (apk)", BOLD + GREEN))
-        print()
-        menu_item(1, "تحديث فهارس الحزم", "apk update")
-        menu_item(2, "ترقية الحزم المثبتة", "apk upgrade")
-        menu_item(3, "تثبيت حزمة", "apk add")
-        menu_item(4, "حذف حزمة", "apk del")
-        menu_item(5, "البحث عن حزمة", "apk search")
-        menu_item(6, "عرض الحزم المثبتة", "apk info")
-        menu_item(0, "رجوع")
+        header("مدير الحزم")
+        item(1, "تحديث فهارس المستودعات", "apk update")
+        item(2, "ترقية الحزم", "apk upgrade")
+        item(3, "تثبيت حزمة", "apk add")
+        item(4, "حذف حزمة", "apk del")
+        item(5, "البحث عن حزمة", "apk search")
+        item(6, "الحزم المثبتة", "apk info")
+        item(0, "رجوع")
         line()
-        choice = input(color("  اختيارك: ", CYAN)).strip()
+        choice = ask("  اختيارك: ")
         if choice == "0":
             return
         if not shutil.which("apk"):
-            print(color("الأمر apk غير متاح في هذه البيئة.", RED))
+            print(color("apk غير متاح في هذه البيئة.", RED))
             pause()
             continue
-        if choice in ("1", "2"):
-            args = ["apk", "update"] if choice == "1" else ["apk", "upgrade"]
-            if choice == "2":
-                confirm = input(color("قد يتم تحديث عدة حزم. متابعة؟ (y/N): ", YELLOW)).lower()
-                if confirm != "y":
-                    continue
-            print(color("\nجاري التنفيذ...\n", YELLOW))
-            subprocess.run(args)
-        elif choice in ("3", "4", "5"):
-            name = input(color("  اسم الحزمة: ", CYAN)).strip()
-            if not name or name.startswith("-"):
+        if choice == "1":
+            result = subprocess.run(["apk", "update"])
+        elif choice == "2":
+            if not confirm("سيتم ترقية الحزم المثبتة. متابعة؟"):
                 continue
-            args = {"3": ["apk", "add", name],
-                    "4": ["apk", "del", name],
+            result = subprocess.run(["apk", "upgrade"])
+        elif choice in ("3", "4", "5"):
+            name = ask("اسم الحزمة: ")
+            if not name or name.startswith("-") or not re.fullmatch(r"[A-Za-z0-9+_.-]+", name):
+                print(color("اسم حزمة غير صالح.", RED))
+                pause()
+                continue
+            args = {"3": ["apk", "add", name], "4": ["apk", "del", name],
                     "5": ["apk", "search", name]}[choice]
-            subprocess.run(args)
+            result = subprocess.run(args)
         elif choice == "6":
-            result = safe_run(["apk", "info"], timeout=30)
-            print(result.stdout if result else "تعذر قراءة القائمة.")
+            show_result(run(["apk", "info"], timeout=40))
+            pause()
+            continue
         else:
             print(color("اختيار غير صحيح.", RED))
+            pause()
+            continue
+        print(color("اكتملت العملية." if result.returncode == 0 else "انتهت العملية مع خطأ.", GREEN if result.returncode == 0 else RED))
         pause()
 
-def file_browser():
+def safe_filename(name):
+    if not name or name in (".", "..") or "/" in name or "\0" in name:
+        return False
+    return True
+
+def file_manager():
     current = Path.home()
     while True:
-        header()
-        print(color("  مستكشف الملفات", BOLD + GREEN))
+        header("مستكشف الملفات")
         print(color("  المسار: " + str(current), CYAN))
         line()
         try:
             entries = sorted(current.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
-        except PermissionError:
-            print(color("لا تملك صلاحية قراءة هذا المجلد.", RED))
-            pause()
-            return
         except Exception as exc:
-            print(color(str(exc), RED))
+            print(color("تعذر قراءة المجلد: " + str(exc), RED))
             pause()
             return
-        shown = entries[:40]
-        for index, entry in enumerate(shown, 1):
-            marker = "📁" if entry.is_dir() else "📄"
-            name = entry.name + ("/" if entry.is_dir() else "")
-            print(f"  {color(str(index).rjust(2), CYAN)} {marker} {name}")
-        if len(entries) > 40:
-            print(color(f"  ... يوجد {len(entries) - 40} عنصر إضافي", DIM))
+        shown = entries[:35]
+        for i, path in enumerate(shown, 1):
+            try:
+                kind = "[مجلد]" if path.is_dir() else "[ملف]"
+                size = "" if path.is_dir() else f"  {path.stat().st_size} B"
+                print(f"  {color(str(i).rjust(2), CYAN)} {kind} {path.name}{size}")
+            except OSError:
+                print(f"  {i:>2} [غير متاح] {path.name}")
+        if len(entries) > len(shown):
+            print(color(f"  تم عرض {len(shown)} من {len(entries)} عنصر.", DIM))
         line()
-        print("  اكتب رقم العنصر لفتحه، (u) للأعلى، (r) لتحديث، (q) رجوع")
-        action = input(color("  > ", CYAN)).strip().lower()
+        print("  رقم: فتح | u: للأعلى | n: مجلد جديد | f: ملف جديد")
+        print("  c: نسخ ملف | m: نقل/إعادة تسمية | d: حذف | q: رجوع")
+        action = ask("  > ").lower()
         if action == "q":
             return
         if action == "u":
             current = current.parent
             continue
-        if action == "r":
-            continue
-        if not action.isdigit():
-            continue
-        index = int(action) - 1
-        if index < 0 or index >= len(shown):
-            continue
-        target = shown[index]
-        if target.is_dir():
-            current = target
-        elif target.is_file():
-            try:
-                if target.stat().st_size > 256 * 1024:
-                    print(color("الملف أكبر من 256KB ولن يُعرض داخل المستكشف.", YELLOW))
-                    pause()
-                    continue
-                data = target.read_text(encoding="utf-8", errors="replace")
-                header()
-                print(color("  " + target.name, BOLD + GREEN))
-                line()
-                for row in data.splitlines()[:300]:
-                    print(row[:terminal_width()])
-                if len(data.splitlines()) > 300:
-                    print(color("\n... تم اختصار العرض", DIM))
-            except Exception as exc:
-                print(color("تعذر فتح الملف: " + str(exc), RED))
+        if action == "n":
+            name = ask("اسم المجلد الجديد: ")
+            if safe_filename(name):
+                try:
+                    (current / name).mkdir()
+                    print(color("تم إنشاء المجلد.", GREEN))
+                except Exception as exc:
+                    print(color(str(exc), RED))
             pause()
+            continue
+        if action == "f":
+            name = ask("اسم الملف الجديد: ")
+            if safe_filename(name):
+                try:
+                    (current / name).touch(exist_ok=False)
+                    print(color("تم إنشاء الملف.", GREEN))
+                except Exception as exc:
+                    print(color(str(exc), RED))
+            pause()
+            continue
+        if action in ("c", "m", "d"):
+            raw = ask("رقم الملف ضمن القائمة: ")
+            if not raw.isdigit() or not 1 <= int(raw) <= len(shown):
+                continue
+            source = shown[int(raw) - 1]
+            if source.is_dir():
+                print(color("هذه العملية متاحة للملفات فقط في هذه النسخة.", YELLOW))
+                pause()
+                continue
+            if action == "d":
+                if confirm("حذف الملف " + source.name + " نهائياً؟"):
+                    try:
+                        source.unlink()
+                        print(color("تم الحذف.", GREEN))
+                    except Exception as exc:
+                        print(color(str(exc), RED))
+            else:
+                dest_name = ask("اسم الملف الهدف (أو مسار نسبي): ")
+                if not dest_name:
+                    continue
+                dest = Path(dest_name).expanduser()
+                if not dest.is_absolute():
+                    dest = current / dest
+                try:
+                    if action == "c":
+                        shutil.copy2(str(source), str(dest))
+                        print(color("تم نسخ الملف.", GREEN))
+                    else:
+                        shutil.move(str(source), str(dest))
+                        print(color("تم نقل الملف.", GREEN))
+                except Exception as exc:
+                    print(color("تعذر إتمام العملية: " + str(exc), RED))
+            pause()
+            continue
+        if action.isdigit():
+            index = int(action) - 1
+            if not 0 <= index < len(shown):
+                continue
+            target = shown[index]
+            if target.is_dir():
+                current = target
+            elif target.is_file():
+                try:
+                    if target.stat().st_size > 512 * 1024:
+                        print(color("الملف أكبر من 512KB؛ تم منع عرضه.", YELLOW))
+                    else:
+                        content = target.read_text(encoding="utf-8", errors="replace")
+                        header("معاينة ملف")
+                        print(color("  " + str(target), GREEN + BOLD))
+                        line()
+                        rows = content.splitlines()
+                        for row in rows[:400]:
+                            print(row[:width()])
+                        if len(rows) > 400:
+                            print(color("... تم اختصار المعاينة.", DIM))
+                except Exception as exc:
+                    print(color("تعذر فتح الملف: " + str(exc), RED))
+                pause()
 
-def command_runner():
+def command_console():
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     while True:
-        header()
-        print(color("  منفذ أوامر Linux", BOLD + GREEN))
-        print(color("  اكتب الأمر كما تكتبه في الطرفية. اكتب exit للرجوع.", DIM))
+        header("طرفية الأوامر")
+        print(color("  نفّذ أوامر shell المعتادة. اكتب exit للعودة.", DIM))
+        print(color("  سجل الأوامر محفوظ في: " + str(HISTORY_FILE), DIM))
         line()
-        try:
-            command = input(color("  " + str(Path.home()) + " $ ", CYAN)).strip()
-        except (EOFError, KeyboardInterrupt):
-            return
+        command = ask("  " + str(Path.cwd()) + " $ ")
         if command.lower() in ("exit", "back", "q"):
             return
         if not command:
             continue
-        print()
         try:
-            # Run through the user's shell so pipes, redirects and shell syntax work.
-            subprocess.run(command, shell=True, executable="/bin/sh")
+            with HISTORY_FILE.open("a", encoding="utf-8") as history:
+                history.write(datetime.now().isoformat(timespec="seconds") + "  " + command + "\n")
+            completed = subprocess.run(command, shell=True, executable="/bin/sh")
+            print(color("\nرمز الخروج: " + str(completed.returncode), DIM))
         except KeyboardInterrupt:
             print(color("\nتم إيقاف الأمر.", YELLOW))
         except Exception as exc:
             print(color("خطأ: " + str(exc), RED))
         pause()
 
+def system_monitor():
+    while True:
+        header("مراقبة النظام")
+        print(color("  مساحة التخزين", BOLD + GREEN))
+        usage = disk_usage()
+        if usage:
+            print(f"  الإجمالي: {usage.total // (1024**2)} MB")
+            print(f"  المستخدم: {usage.used // (1024**2)} MB")
+            print(f"  المتاح:   {usage.free // (1024**2)} MB")
+        print()
+        print(color("  العمليات الجارية", BOLD + GREEN))
+        ps = run(["ps"], timeout=10)
+        show_result(ps, "تعذر الحصول على قائمة العمليات.")
+        print()
+        print(color("  الذاكرة", BOLD + GREEN))
+        mem = Path("/proc/meminfo")
+        if mem.exists():
+            try:
+                for row in mem.read_text(errors="replace").splitlines()[:8]:
+                    print("  " + row)
+            except Exception:
+                print("  معلومات الذاكرة غير متاحة.")
+        else:
+            print("  /proc/meminfo غير متاح في هذه البيئة.")
+        pause()
+        return
+
+def network_tools():
+    while True:
+        header("أدوات الشبكة")
+        item(1, "عرض معلومات الشبكة", "ip addr / ifconfig")
+        item(2, "اختبار الاتصال Ping", "إرسال 4 حزم")
+        item(3, "استعلام DNS", "getent hosts")
+        item(4, "اسم الجهاز")
+        item(0, "رجوع")
+        line()
+        choice = ask("  اختيارك: ")
+        if choice == "0":
+            return
+        if choice == "1":
+            result = run(["ip", "addr"])
+            if result is None:
+                result = run(["ifconfig"])
+            show_result(result)
+            pause()
+        elif choice == "2":
+            host = ask("اسم النطاق أو عنوان IP: ")
+            if not re.fullmatch(r"[A-Za-z0-9.-]{1,253}", host) or host.startswith("-"):
+                print(color("عنوان غير صالح.", RED))
+                pause()
+                continue
+            ping = shutil.which("ping")
+            if not ping:
+                print(color("ping غير مثبت. يمكنك تثبيت الحزمة المناسبة عبر apk.", RED))
+            else:
+                show_result(run([ping, "-c", "4", "-W", "3", host], timeout=18))
+            pause()
+        elif choice == "3":
+            host = ask("اسم النطاق: ")
+            if not re.fullmatch(r"[A-Za-z0-9.-]{1,253}", host) or host.startswith("-"):
+                print(color("اسم نطاق غير صالح.", RED))
+            else:
+                result = run(["getent", "hosts", host])
+                if result is None:
+                    try:
+                        print("DNS:", socket.gethostbyname_ex(host))
+                    except Exception as exc:
+                        print(color("فشل الاستعلام: " + str(exc), RED))
+                else:
+                    show_result(result, "لم يتم العثور على سجل.")
+            pause()
+        elif choice == "4":
+            print("اسم الجهاز:", socket.gethostname())
+            pause()
+
 def system_info():
-    header()
-    print(color("  معلومات النظام", BOLD + GREEN))
-    print()
+    header("معلومات النظام")
     values = [
         ("النظام", platform.platform()),
-        ("إصدار النواة", platform.release()),
+        ("النواة", platform.release()),
         ("المعمارية", platform.machine()),
         ("المعالج", platform.processor() or "غير متاح"),
         ("Python", platform.python_version()),
@@ -257,58 +432,77 @@ def system_info():
         ("المجلد الحالي", os.getcwd()),
         ("مجلد المستخدم", str(Path.home())),
         ("Shell", os.environ.get("SHELL", "/bin/sh")),
+        ("اسم الجهاز", socket.gethostname()),
     ]
     for key, value in values:
         print("  " + color(key + ":", CYAN), value)
     print()
-    for cmd in (["uname", "-a"], ["id"], ["df", "-h", str(Path.home())]):
-        result = safe_run(cmd)
+    for args in (["uname", "-a"], ["id"], ["df", "-h", str(Path.home())]):
+        result = run(args)
         if result and result.stdout:
-            print(color("  $ " + " ".join(cmd), YELLOW))
+            print(color("  $ " + " ".join(args), YELLOW))
             print(textwrap.indent(result.stdout.strip(), "    "))
     pause()
 
 def update_project():
-    header()
-    print(color("  تحديث ISH UI من GitHub", BOLD + GREEN))
+    header("تحديث المشروع")
     root = Path(__file__).resolve().parent
     if not (root / ".git").exists():
-        print(color("المجلد الحالي ليس نسخة Git. أعد الاستيراد باستخدام git clone.", YELLOW))
+        print(color("هذه النسخة ليست مستنسخة عبر Git.", YELLOW))
+        print("أعد الاستيراد باستخدام git clone لتفعيل التحديث التلقائي.")
         pause()
         return
     if not shutil.which("git"):
         print(color("Git غير مثبت. نفّذ: apk add git", RED))
         pause()
         return
-    confirm = input(color("سيتم تنزيل آخر تحديثات المشروع. متابعة؟ (y/N): ", YELLOW)).lower()
-    if confirm != "y":
+    if not confirm("سيتم جلب التحديثات من " + REPO + ". متابعة؟"):
         return
     result = subprocess.run(["git", "-C", str(root), "pull", "--ff-only"])
-    print(color("اكتمل التحديث." if result.returncode == 0 else "فشل التحديث؛ راجع رسالة Git أعلاه.", GREEN if result.returncode == 0 else RED))
+    print(color("تم التحديث." if result.returncode == 0 else "فشل التحديث؛ راجع رسائل Git.", GREEN if result.returncode == 0 else RED))
     pause()
 
+def settings():
+    while True:
+        header("الإعدادات")
+        item(1, "تبديل الألوان", "الحالة الحالية: " + ("مفعلة" if CONFIG.get("colors") else "متوقفة"))
+        item(2, "تبديل الساعة", "الحالة الحالية: " + ("ظاهرة" if CONFIG.get("show_clock") else "مخفية"))
+        item(0, "رجوع")
+        line()
+        choice = ask("  اختيارك: ")
+        if choice == "0":
+            return
+        if choice == "1":
+            CONFIG["colors"] = not CONFIG.get("colors", True)
+        elif choice == "2":
+            CONFIG["show_clock"] = not CONFIG.get("show_clock", True)
+        else:
+            continue
+        save_config()
+        print(color("تم حفظ الإعدادات.", GREEN))
+        pause()
+
 def main():
+    actions = {
+        "1": package_manager,
+        "2": file_manager,
+        "3": command_console,
+        "4": system_monitor,
+        "5": network_tools,
+        "6": system_info,
+        "7": update_project,
+        "8": settings,
+    }
     while True:
         dashboard()
-        try:
-            choice = input(color("  اختيارك: ", CYAN)).strip()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            return
+        choice = ask("  اختيارك: ")
         if choice == "0":
             clear()
             print(color("شكراً لاستخدام ISH UI — يوسف الحازمي", CYAN))
             return
-        elif choice == "1":
-            package_manager()
-        elif choice == "2":
-            file_browser()
-        elif choice == "3":
-            command_runner()
-        elif choice == "4":
-            system_info()
-        elif choice == "5":
-            update_project()
+        action = actions.get(choice)
+        if action:
+            action()
         else:
             print(color("اختيار غير صحيح.", RED))
             pause()
