@@ -96,13 +96,12 @@ def _run(args, timeout=20):
         return "تعذر التنفيذ: " + str(exc)[:300]
 
 def _audit_worker(job_id):
-    import contextlib
     log_path = BASE / ("web_audit_" + str(job_id) + ".log")
+    script = Path(__file__).with_name("site_audit.py")
     try:
         with log_path.open("a", encoding="utf-8") as stream:
-            with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
-                from site_audit import audit
-                audit(job_id)
+            subprocess.run([__import__("sys").executable, str(script), "--job", str(job_id)],
+                           stdout=stream, stderr=subprocess.STDOUT, timeout=None, check=False)
     except Exception as exc:
         with log_path.open("a", encoding="utf-8") as stream:
             stream.write("Audit worker error: " + str(exc)[:300] + "\\n")
