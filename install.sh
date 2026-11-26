@@ -69,7 +69,7 @@ if ! grep -Fq 'export PATH="$HOME/.local/bin:$PATH"' "$PROFILE"; then
 fi
 
 echo ""
-echo "ISH UI 5.1.0 installed."
+echo "ISH UI 5.3.0 installed."
 echo "Commands: ish  |  ishui"
 echo "The repository is checked and fast-forward updated before each launch."
 echo "If local files are modified, the update is skipped to protect them."
