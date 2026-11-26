@@ -1218,7 +1218,6 @@ def main():
         if arg == "--backup":
             backup_manager()
             return
-    welcome_screen()
     global WEB_SERVER_INFO
     try:
         from web_server import start as start_web_server
@@ -1227,6 +1226,7 @@ def main():
         WEB_SERVER_INFO = None
         print(color("تعذر تشغيل خادم الويب المحلي: " + str(exc), YELLOW))
         time.sleep(1.5)
+    welcome_screen()
     actions = {
         "1": package_manager,
         "2": file_manager,
