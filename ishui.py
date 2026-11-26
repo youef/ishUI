@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import datetime
 
 APP_NAME = "ISH UI"
-VERSION = "5.3.0"
+VERSION = "5.4.0"
 AUTHOR = "يوسف الحازمي"
 REPO = "https://github.com/youef/ishUI"
 CONFIG_DIR = Path.home() / ".config" / "ishui"
