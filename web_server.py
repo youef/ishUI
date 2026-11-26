@@ -104,7 +104,7 @@ def _audit_worker(job_id):
                            stdout=stream, stderr=subprocess.STDOUT, timeout=None, check=False)
     except Exception as exc:
         with log_path.open("a", encoding="utf-8") as stream:
-            stream.write("Audit worker error: " + str(exc)[:300] + "\\n")
+            stream.write("Audit worker error: " + str(exc)[:300] + "\n")
 
 def _reports():
     REPORTS.mkdir(parents=True, exist_ok=True)
