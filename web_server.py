@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Local authenticated ISH UI web console. Loopback-only; no arbitrary shell endpoint."""
+"""Local ISH UI web console. Loopback-only; no arbitrary shell endpoint."""
 import json
 import os
 import re
@@ -9,6 +9,7 @@ import socket
 import sqlite3
 import subprocess
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -20,6 +21,8 @@ PORTS = range(8765, 8771)
 MAX_REQUEST = 16384
 MAX_OUTPUT = 12000
 _SERVER = None
+_SERVER_STARTED_AT = time.time()
+_PAUSED = False
 
 PAGE = r"""<!doctype html>
 <html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -42,18 +45,21 @@ section{margin:14px 0}.hidden{display:none}.status{color:#8ce0b2}.danger{color:#
 <header><h1>ISH UI <span style="color:#71c7ff">/ WEB CONTROL</span></h1><p>لوحة إدارة محلية — متاحة مباشرة على هذا الجهاز</p></header>
 <main><div id="app">
 <nav><button onclick="show('home')">الرئيسية</button><button onclick="show('tools')">الأدوات والأوامر</button><button onclick="show('audit')">فحص النطاق</button><button onclick="show('reports')">التقارير</button></nav>
-<section id="home"><div class="grid"><div class="card"><h2>حالة الخادم</h2><div class="stat status" id="server">متصل</div><div class="muted" id="sys"></div></div><div class="card"><h2>المهام المحفوظة</h2><div class="stat" id="jobs">—</div><div class="muted">مهام الفحص في قاعدة البيانات المحلية</div></div><div class="card"><h2>التقارير</h2><div class="stat" id="reportcount">—</div><div class="muted">ملفات JSON المحفوظة</div></div></div><div class="card" style="margin-top:14px"><h2>آخر التقارير</h2><div id="recent" class="list"></div></div></section>
+<section id="home"><div class="card"><h2>التحكم بالخادم</h2><p class="muted">إيقاف الخدمة يوقف استقبال أوامر الأدوات والفحوصات، مع إبقاء صفحة التحكم متاحة لإعادة التشغيل.</p><div class="row"><button class="warn" onclick="serverAction('stop')">إيقاف الخدمة</button><button onclick="serverAction('start')">تشغيل الخدمة</button></div><div id="servermsg" class="muted"></div></div><div class="grid"><div class="card"><h2>حالة الخادم</h2><div class="stat status" id="server">متصل</div><div class="muted" id="sys"></div></div><div class="card"><h2>المهام المحفوظة</h2><div class="stat" id="jobs">—</div><div class="muted">مهام الفحص في قاعدة البيانات المحلية</div></div><div class="card"><h2>التقارير</h2><div class="stat" id="reportcount">—</div><div class="muted">ملفات JSON المحفوظة</div></div></div><div class="card" style="margin-top:14px"><h2>آخر التقارير</h2><div id="recent" class="list"></div></div></section>
 <section id="tools" class="hidden"><div class="grid"><div class="card"><h2>أوامر النظام المسموحة</h2><p class="muted">قائمة محددة فقط؛ لا يوجد تنفيذ shell عشوائي من المتصفح.</p><select id="cmd"><option value="system">ملخص النظام والتخزين</option><option value="processes">العمليات</option><option value="network">معلومات الشبكة</option><option value="packages">الحزم المثبتة</option></select><button onclick="runCommand()">تنفيذ</button><div id="cmdout" class="out"></div></div>
 <div class="card"><h2>البحث عن حزمة</h2><input id="searchpkg" placeholder="اسم الحزمة"><button class="secondary" onclick="searchPackage()">بحث في apk</button><div id="pkgout" class="out"></div></div>
 <div class="card"><h2>تثبيت أداة / حزمة</h2><p class="muted">التثبيت يغيّر بيئة iSH. راجع اسم الحزمة قبل الموافقة.</p><input id="installpkg" placeholder="مثال: curl"><label class="muted"><input id="installconfirm" type="checkbox" style="width:auto"> أوافق على تثبيت هذه الحزمة</label><button class="warn" onclick="installPackage()">تثبيت الحزمة</button><div id="installout" class="out"></div></div></div></section>
-<section id="audit" class="hidden"><div class="card"><h2>بدء فحص نطاق مصرح به</h2><p class="muted">يفحص فقط النطاقات المحفوظة في قائمة التصريح. الفحص منخفض التأثير ولا ينفذ استغلالاً.</p><input id="domain" placeholder="example.com"><button onclick="startAudit()">بدء الفحص</button><div id="auditout" class="out"></div></div></section>
+<section id="audit" class="hidden"><div class="card"><h2>إدارة النطاقات المصرح بها</h2><p class="muted">أضف فقط النطاقات التي تملكها أو لديك تصريح صريح بفحصها. تحفظ القائمة محلياً على الجهاز.</p><div class="row"><input id="newdomain" placeholder="example.com"><button onclick="scopeAction('add')">إضافة النطاق</button></div><div id="scopeout" class="list"></div></div><div class="card"><h2>بدء فحص نطاق مصرح به</h2><p class="muted">يفحص فقط النطاقات المحفوظة في قائمة التصريح. الفحص منخفض التأثير ولا ينفذ استغلالاً.</p><input id="domain" placeholder="example.com"><button onclick="startAudit()">بدء الفحص</button><div id="auditout" class="out"></div></div></section>
 <section id="reports" class="hidden"><div class="card"><h2>مكتبة التقارير</h2><button class="secondary" onclick="loadReports()">تحديث القائمة</button><div id="reportlist" class="list"></div><pre id="reportview" class="out"></pre></div></section>
 </div></main>
 <script>
 async function api(path,body){let r=await fetch(path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});let j=await r.json();if(!r.ok)throw Error(j.error||'Request failed');return j}
-function show(id){document.querySelectorAll('main section').forEach(x=>x.classList.add('hidden'));document.getElementById(id).classList.remove('hidden');if(id==='reports')loadReports()}
+function show(id){document.querySelectorAll('main section').forEach(x=>x.classList.add('hidden'));document.getElementById(id).classList.remove('hidden');if(id==='reports')loadReports();if(id==='audit')loadScope()}
 function put(id,v){document.getElementById(id).textContent=v}
-async function refresh(){try{let s=await api('/api/status');put('sys',s.platform+' · Python '+s.python+' · '+s.storage);put('jobs',s.jobs);put('reportcount',s.reports);let r=await api('/api/reports');renderRecent(r.files.slice(0,5))}catch(e){put('server','غير متاح')}}
+async function refresh(){try{let s=await api('/api/status');put('server',s.paused?'متوقف مؤقتاً':'يعمل');put('sys',s.platform+' · Python '+s.python+' · '+s.storage+' · مدة العملية '+s.uptime);put('jobs',s.jobs);put('reportcount',s.reports);let r=await api('/api/reports');renderRecent(r.files.slice(0,5));loadScope()}catch(e){put('server','غير متاح')}}
+async function serverAction(action){try{let r=await api('/api/server',{action});put('servermsg',r.message);refresh()}catch(e){put('servermsg',e.message)}}
+async function loadScope(){try{let r=await api('/api/scope');let el=document.getElementById('scopeout');el.innerHTML='';if(!r.domains.length){el.textContent='لا توجد نطاقات مصرح بها بعد.';return}r.domains.forEach(host=>{let d=document.createElement('div');d.className='item row';let t=document.createElement('span');t.textContent=host;let b=document.createElement('button');b.className='warn';b.textContent='حذف';b.onclick=()=>scopeAction('remove',host);d.append(t,b);el.appendChild(d)})}catch(e){put('scopeout',e.message)}}
+async function scopeAction(action,domain){try{domain=domain||document.getElementById('newdomain').value;let r=await api('/api/scope',{action,domain,authorized:true});put('scopeout',r.message);document.getElementById('newdomain').value='';loadScope()}catch(e){put('scopeout',e.message)}}
 function renderRecent(files){let el=document.getElementById('recent');el.innerHTML='';files.forEach(f=>{let d=document.createElement('div');d.className='item';d.textContent=f.name+' · '+f.modified;el.appendChild(d)})}
 async function runCommand(){try{let r=await api('/api/command',{name:document.getElementById('cmd').value});put('cmdout',r.output)}catch(e){put('cmdout',e.message)}}
 async function searchPackage(){try{let r=await api('/api/command',{name:'apk_search',query:document.getElementById('searchpkg').value});put('pkgout',r.output)}catch(e){put('pkgout',e.message)}}
@@ -105,7 +111,8 @@ def _status():
     return {"platform": os.uname().sysname if hasattr(os, "uname") else "iSH",
             "python": __import__("platform").python_version(),
             "storage": str(usage.free // (1024 * 1024)) + " MB free",
-            "jobs": jobs, "reports": len(_reports())}
+            "jobs": jobs, "reports": len(_reports()), "paused": _PAUSED,
+            "uptime": str(int(max(0, time.time() - _SERVER_STARTED_AT))) + " ثانية"}
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "ISHUI-Local/1.0"
@@ -142,6 +149,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/status":
             self._json(200, _status())
+        elif self.path == "/api/scope":
+            from site_audit import load_scope
+            self._json(200, {"domains": load_scope()})
         elif self.path == "/api/reports":
             self._json(200, {"files": _reports()})
         else:
@@ -149,7 +159,37 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             data = self._body()
-            if self.path == "/api/command":
+            if self.path == "/api/server":
+                global _PAUSED
+                action = data.get("action")
+                if action == "stop":
+                    _PAUSED = True
+                    self._json(200, {"paused": True, "message": "تم إيقاف الخدمة مؤقتاً. يمكنك إعادة تشغيلها من هذه الصفحة."})
+                elif action == "start":
+                    _PAUSED = False
+                    self._json(200, {"paused": False, "message": "الخدمة تعمل الآن."})
+                else:
+                    raise ValueError("إجراء خادم غير صالح.")
+            elif self.path == "/api/scope":
+                from site_audit import normalize_host, load_scope, save_scope
+                action = data.get("action")
+                if data.get("authorized") is not True:
+                    raise ValueError("أكد أنك تملك النطاق أو لديك تصريح صريح بفحصه.")
+                host, _scheme = normalize_host(str(data.get("domain", "")))
+                domains = set(load_scope())
+                if action == "add":
+                    domains.add(host)
+                    save_scope(domains)
+                    self._json(200, {"message": "تمت إضافة " + host + " إلى قائمة التصريح."})
+                elif action == "remove":
+                    domains.discard(host)
+                    save_scope(domains)
+                    self._json(200, {"message": "تم حذف " + host + " من قائمة التصريح."})
+                else:
+                    raise ValueError("إجراء نطاق غير صالح.")
+            elif self.path == "/api/command":
+                if _PAUSED:
+                    raise ValueError("الخدمة متوقفة مؤقتاً. أعد تشغيلها من تبويب الرئيسية.")
                 name = data.get("name")
                 commands = {
                     "system": [["uname", "-a"], ["df", "-h"]],
@@ -168,6 +208,8 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("الأمر غير موجود في قائمة الأوامر المسموحة.")
                 self._json(200, {"output": output})
             elif self.path == "/api/install":
+                if _PAUSED:
+                    raise ValueError("الخدمة متوقفة مؤقتاً. أعد تشغيلها من تبويب الرئيسية.")
                 package = str(data.get("package", "")).strip()
                 if data.get("confirm") is not True:
                     raise ValueError("يتطلب التثبيت موافقة صريحة.")
@@ -177,6 +219,8 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("مدير apk غير متاح.")
                 self._json(200, {"output": _run(["apk", "add", package], timeout=180)})
             elif self.path == "/api/audit":
+                if _PAUSED:
+                    raise ValueError("الخدمة متوقفة مؤقتاً. أعد تشغيلها من تبويب الرئيسية.")
                 domain = str(data.get("domain", "")).strip()
                 from site_audit import normalize_host, load_scope, create_job
                 host, scheme = normalize_host(domain)
