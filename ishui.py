@@ -20,7 +20,7 @@ from pathlib import Path
 from datetime import datetime
 
 APP_NAME = "ISH UI"
-VERSION = "3.1.0"
+VERSION = "3.2.0"
 AUTHOR = "يوسف الحازمي"
 REPO = "https://github.com/youef/ishUI"
 CONFIG_DIR = Path.home() / ".config" / "ishui"
@@ -115,28 +115,18 @@ def disk_usage():
     except Exception:
         return None
 
-def header(section="مركز التحكم"):
+def header(section="الرئيسية"):
     clear()
-    w = width()
-    print(color("╔" + "═" * (w - 2) + "╗", CYAN))
-    print(color("║", CYAN) + color(" ISH UI  •  iSH CONTROL CENTER ".center(w - 2), BOLD + WHITE) + color("║", CYAN))
-    sub = "يوسف الحازمي  |  v" + VERSION + "  |  " + section
-    print(color("║", CYAN) + color(sub.center(w - 2), MAGENTA) + color("║", CYAN))
-    print(color("╚" + "═" * (w - 2) + "╝", CYAN))
-    if CONFIG.get("show_clock", True):
-        print(color("  " + datetime.now().strftime("%Y-%m-%d  %H:%M:%S"), DIM))
-    line()
+    print(color("ISH UI", BOLD + CYAN) + color("  /  iSH TOOLKIT", DIM))
+    print(color("الإصدار " + VERSION + "   •   " + section, DIM))
+    line("─")
+
 
 def item(number, title, detail=""):
-    icons = {
-        0: "⏻", 1: "📦", 2: "📁", 3: "⌨", 4: "📊", 5: "🌐",
-        6: "ℹ", 7: "🔄", 8: "⚙", 9: "📝", 10: "⚡", 11: "🔧",
-        12: "🛡", 13: "🗜", 14: "🩺", 15: "🔍"
-    }
-    icon = icons.get(int(number), "•")
-    print(color("  " + icon + " [" + str(number) + "] ", BOLD + CYAN) +
-          color(title, WHITE) +
-          (color("  ·  " + detail, DIM) if detail else ""))
+    # Minimal text-first menu: stable on narrow iPhone terminal screens.
+    print("  " + color(str(number).rjust(2, "0"), CYAN) +
+          color("  ›  ", DIM) + color(title, WHITE))
+
 
 def storage_summary():
     usage = disk_usage()
@@ -145,39 +135,38 @@ def storage_summary():
     used = usage.used / usage.total * 100
     return f"{usage.used // (1024**2)} / {usage.total // (1024**2)} MB", used
 
+
 def dashboard():
     header()
     storage, percent = storage_summary()
-    print(color("  نظرة عامة", BOLD + GREEN))
-    print("  النظام       :", platform.system(), platform.release())
-    print("  المعمارية    :", platform.machine())
-    print("  Python       :", platform.python_version())
-    print("  المستخدم     :", os.environ.get("USER", "unknown"))
-    print("  مساحة التخزين:", storage)
-    bar_len = 25
-    filled = int(bar_len * percent / 100)
-    bar = "█" * filled + "░" * (bar_len - filled)
-    print("  [" + color(bar, GREEN if percent < 80 else YELLOW) + f"] {percent:.1f}%")
+    print(color("النظام", BOLD + WHITE))
+    print("  " + platform.system() + "  •  Python " + platform.python_version())
+    print("  التخزين: " + storage)
     print()
-    line()
-    print(color("  الأدوات", BOLD + WHITE))
-    item(1, "مدير الحزم", "تثبيت / حذف / بحث / تحديث")
-    item(2, "مستكشف الملفات", "إنشاء وقراءة ونسخ ونقل وحذف")
-    item(3, "طرفية الأوامر", "سجل أوامر ودعم أوامر shell")
-    item(4, "مراقبة النظام", "العمليات والذاكرة والتخزين")
-    item(5, "أدوات الشبكة", "عنوان IP وDNS وPing")
-    item(6, "معلومات النظام", "تفاصيل بيئة التشغيل")
-    item(7, "تحديث ISH UI", "التحديث من GitHub")
-    item(8, "الإعدادات", "الألوان والساعة")
-    item(9, "محرر النصوص", "إنشاء وتحرير ملفات نصية")
-    item(10, "مدير العمليات", "عرض العمليات وإيقافها")
-    item(11, "مدير الخدمات", "خدمات OpenRC في Alpine")
-    item(12, "النسخ الاحتياطي", "إنشاء واستعادة نسخة مضغوطة")
-    item(13, "مدير الأرشيف", "ZIP و TAR")
-    item(14, "فحص النظام", "تشخيص الأدوات والبيئة")
-    item(15, "فاحص المواقع", "HTTP / HTTPS / DNS / SSL / Security Headers")
+    print(color("إدارة النظام", BOLD + CYAN))
+    item(1, "مدير الحزم")
+    item(2, "مستكشف الملفات")
+    item(3, "طرفية الأوامر")
+    item(4, "مراقبة النظام")
+    item(5, "معلومات النظام")
+    print()
+    print(color("الشبكة والفحص", BOLD + CYAN))
+    item(6, "أدوات الشبكة")
+    item(7, "فاحص المواقع")
+    item(8, "فحص النظام")
+    print()
+    print(color("الأدوات والملفات", BOLD + CYAN))
+    item(9, "محرر النصوص")
+    item(10, "مدير العمليات")
+    item(11, "مدير الخدمات")
+    item(12, "النسخ الاحتياطي")
+    item(13, "مدير الأرشيف")
+    print()
+    print(color("التطبيق", BOLD + CYAN))
+    item(14, "تحديث ISH UI")
+    item(15, "الإعدادات")
     item(0, "خروج")
-    line()
+    line("─")
 
 def package_manager():
     while True:
@@ -985,17 +974,17 @@ def main():
         "2": file_manager,
         "3": command_console,
         "4": system_monitor,
-        "5": network_tools,
-        "6": system_info,
-        "7": update_project,
-        "8": settings,
+        "5": system_info,
+        "6": network_tools,
+        "7": website_inspector,
+        "8": system_diagnostics,
         "9": text_editor,
         "10": process_manager,
         "11": service_manager,
         "12": backup_manager,
         "13": archive_manager,
-        "14": system_diagnostics,
-        "15": website_inspector,
+        "14": update_project,
+        "15": settings,
     }
     while True:
         dashboard()
