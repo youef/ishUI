@@ -390,44 +390,26 @@ def resume_jobs():
         audit(int(raw))
 
 def run():
-    while True:
-        print("\n=== ISH UI | الفحص الذكي الدفعي للمواقع ===")
-        print("1 فحص تلقائي شامل لنطاق")
-        print("2 إدارة قائمة النطاقات المصرح بها")
-        print("3 استئناف مهمة محفوظة")
-        print("0 رجوع")
-        choice = input("اختيارك: ").strip()
-        if choice == "0": return
-        if choice == "2":
-            try: edit_scope()
-            except Exception as exc: print("تعذر تحديث القائمة:", exc)
-            continue
-        if choice == "3":
-            resume_jobs(); continue
-        if choice != "1":
-            print("اختيار غير صحيح."); continue
-        try:
-            primary, primary_scheme = normalize_host(input("أدخل النطاق الأساسي: "))
-            scope = load_scope()
-            if not scope:
-                print("أول تشغيل: أدخل جميع النطاقات التي تملكها أو لديك تصريح مكتوب لفحصها.")
-                scope = edit_scope()
-            if primary not in scope:
-                print("سيُضاف النطاق الأساسي إلى نطاق هذه المهمة فقط بعد تأكيد التصريح.")
-            print("\nتنبيه خصوصية: يمكن استخدام HackerTarget للبحث العكسي عن النطاقات على IP؛")
-            print("سيُرسل عنوان IP العام إلى مزود خارجي. اكتب YES للموافقة أو Enter للتخطي.")
-            use_provider = input("السماح بالبحث العكسي الخارجي؟ ").strip() == "YES"
-            print("\nتأكيد: أفحص فقط النطاقات التي أملكها أو لدي تصريح صريح بفحصها.")
-            if input("اكتب YES للبدء: ").strip() != "YES":
-                print("تم الإلغاء."); continue
-            if primary not in scope:
-                scope.append(primary)
-                save_scope(scope)
-            batch_scan(primary, primary_scheme, scope, use_provider)
-        except KeyboardInterrupt:
-            print("\nتم الإلغاء.")
-        except Exception as exc:
-            print("تعذر بدء الفحص:", str(exc)[:200])
+    print("\n=== ISH UI | الفحص التلقائي للنطاقات ===")
+    print("أدخل نطاقاً مصرحاً لك بفحصه، ثم اضغط Enter لبدء الفحص مباشرة.")
+    try:
+        primary, primary_scheme = normalize_host(input("النطاق: "))
+        scope = load_scope()
+        if primary not in scope:
+            print("\nهذا النطاق غير موجود في قائمة النطاقات المصرح بها.")
+            print("للمتابعة، أكد أنك تملك النطاق أو لديك تصريح صريح بفحصه.")
+            if input("اكتب YES للتأكيد والإضافة إلى القائمة: ").strip() != "YES":
+                print("تم الإلغاء؛ لم يبدأ الفحص.")
+                return
+            scope.append(primary)
+            save_scope(scope)
+        print("\nبدأ الفحص التلقائي الآن...")
+        print("سيُستخدم الاكتشاف المحلي/السلبي فقط؛ لن يُرسل IP إلى مزود خارجي.")
+        batch_scan(primary, primary_scheme, scope, False)
+    except (EOFError, KeyboardInterrupt):
+        print("\nتم الإلغاء.")
+    except Exception as exc:
+        print("تعذر بدء الفحص:", str(exc)[:200])
 
 if __name__ == "__main__":
     run()
