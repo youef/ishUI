@@ -20,7 +20,7 @@ from pathlib import Path
 from datetime import datetime
 
 APP_NAME = "ISH UI"
-VERSION = "3.2.0"
+VERSION = "4.0.0"
 AUTHOR = "يوسف الحازمي"
 REPO = "https://github.com/youef/ishUI"
 CONFIG_DIR = Path.home() / ".config" / "ishui"
@@ -136,6 +136,26 @@ def storage_summary():
     return f"{usage.used // (1024**2)} / {usage.total // (1024**2)} MB", used
 
 
+def welcome_screen():
+    """Compact first-run welcome screen for narrow iSH terminals."""
+    clear()
+    print()
+    print(color("  ISH UI", BOLD + CYAN))
+    print(color("  ──────────────────────────────", BLUE))
+    print(color("  iSH TOOLKIT  |  VERSION " + VERSION, DIM))
+    print()
+    print(color("  أهلاً بك في مركز أدوات iSH", BOLD + WHITE))
+    print("  إدارة النظام والشبكة وأدوات الويب")
+    print()
+    print(color("  BY يوسف الحازمي", MAGENTA))
+    print(color("  ──────────────────────────────", BLUE))
+    print(color("  اضغط Enter للانتقال إلى لوحة الأدوات", DIM))
+    try:
+        input("  ")
+    except (EOFError, KeyboardInterrupt):
+        return
+
+
 def dashboard():
     header()
     storage, percent = storage_summary()
@@ -150,9 +170,9 @@ def dashboard():
     item(4, "مراقبة النظام")
     item(5, "معلومات النظام")
     print()
-    print(color("الشبكة والفحص", BOLD + CYAN))
+    print(color("الشبكة والأمن", BOLD + CYAN))
     item(6, "أدوات الشبكة")
-    item(7, "فاحص المواقع")
+    item(7, "تدقيق الويب", "DNS / TLS / HTTP / Cookies")
     item(8, "فحص النظام")
     print()
     print(color("الأدوات والملفات", BOLD + CYAN))
@@ -790,29 +810,45 @@ def web_tool_manager():
 
 
 def website_inspector():
-    """Passive, non-destructive checks for a website supplied by the user."""
+    """Safe, low-impact web posture checks for explicitly authorized sites."""
     import time
     import urllib.request
     import urllib.error
     import urllib.parse
     import ssl
+    import http.cookiejar
+
+    def fetch(url, method="GET", timeout=10):
+        request = urllib.request.Request(
+            url, method=method,
+            headers={"User-Agent": "ISH-UI-Security-Audit/4.0",
+                     "Accept": "*/*"})
+        try:
+            return urllib.request.urlopen(request, timeout=timeout)
+        except urllib.error.HTTPError as exc:
+            return exc
+
+    def print_finding(level, message):
+        shade = RED if level == "مرتفع" else YELLOW if level == "مراجعة" else GREEN
+        print("  " + color("[" + level + "]", shade) + " " + message)
 
     while True:
-        header("فاحص المواقع")
-        print(color("  فحص سلبي وآمن: لا يستغل الثغرات ولا يرسل حمولات هجومية.", DIM))
-        item(1, "فحص موقع", "DNS + HTTP(S) + SSL + Security Headers")
-        item(2, "إدارة أدوات الفحص", "تثبيت / التحقق من الأدوات")
+        header("تدقيق الويب")
+        print(color("  للمواقع التي تملكها أو لديك تصريح صريح بفحصها فقط.", DIM))
+        item(1, "تدقيق إعدادات موقع", "DNS · TLS · HTTPS · Headers · Cookies")
+        item(2, "فحص ملفات التعريف العامة", "robots.txt · sitemap.xml · security.txt")
+        item(3, "إدارة أدوات الفحص", "التحقق من أدوات الشبكة وتثبيت الناقص")
         item(0, "رجوع")
         choice = ask("  اختيارك: ")
         if choice == "0":
             return
-        if choice == "2":
+        if choice == "3":
             web_tool_manager()
             continue
-        if choice != "1":
+        if choice not in ("1", "2"):
             continue
 
-        raw = ask("  رابط الموقع (مثال: https://example.com): ")
+        raw = ask("  نطاق/رابط الموقع: ")
         if not raw:
             continue
         if "://" not in raw:
@@ -820,105 +856,133 @@ def website_inspector():
         try:
             parsed = urllib.parse.urlsplit(raw)
             if parsed.scheme not in ("http", "https") or not parsed.hostname:
-                raise ValueError("استخدم رابط HTTP أو HTTPS صالحاً.")
-            if parsed.username or parsed.password:
-                raise ValueError("لا تضع بيانات دخول داخل الرابط.")
-            if any(ch.isspace() for ch in raw):
-                raise ValueError("الرابط يحتوي مسافات غير صالحة.")
+                raise ValueError("أدخل رابط HTTP أو HTTPS صحيحاً.")
+            if parsed.username or parsed.password or any(ch.isspace() for ch in raw):
+                raise ValueError("الرابط يحتوي بيانات دخول أو مسافات غير مسموحة.")
             host = parsed.hostname
             port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            base = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc,
+                                            parsed.path or "/", "", ""))
         except Exception as exc:
             print(color("رابط غير صالح: " + str(exc), RED))
             pause()
             continue
 
+        print()
+        print(color("  الهدف: " + host, BOLD + CYAN))
+        print(color("  تنبيه: الفحص محدود بطلبات HTTP قياسية ولا ينفذ استغلالاً.", DIM))
         line()
-        print(color("  1) فحص DNS", BOLD + CYAN))
+
+        if choice == "2":
+            for path in ("/robots.txt", "/sitemap.xml", "/.well-known/security.txt"):
+                url = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+                try:
+                    response = fetch(url, timeout=8)
+                    status = response.getcode()
+                    ctype = response.headers.get("Content-Type", "غير معروف")
+                    print("  ", path, "→ HTTP", status, "|", ctype)
+                    response.close()
+                except Exception as exc:
+                    print("  ", path, "→ تعذر الفحص:", str(exc)[:100])
+            pause()
+            continue
+
+        # DNS resolution
+        print(color("  1. DNS", BOLD + CYAN))
         try:
             started = time.perf_counter()
             addresses = sorted(set(x[4][0] for x in socket.getaddrinfo(
                 host, port, type=socket.SOCK_STREAM)))
-            elapsed = (time.perf_counter() - started) * 1000
-            print(color("  ✓ تم حل اسم النطاق", GREEN),
-                  f"({elapsed:.0f} ms)")
+            print_finding("سليم", "تم حل النطاق خلال %.0f ms" %
+                          ((time.perf_counter() - started) * 1000))
             for address in addresses[:8]:
-                print("    •", address)
+                print("     ", address)
         except Exception as exc:
+            print_finding("مرتفع", "فشل حل DNS: " + str(exc))
             addresses = []
-            print(color("  ✗ فشل DNS: " + str(exc), RED))
 
+        # TLS validation and certificate lifetime
         if parsed.scheme == "https":
-            print(color("\n  2) فحص اتصال وشهادة TLS", BOLD + CYAN))
+            print(color("\n  2. TLS والشهادة", BOLD + CYAN))
             try:
                 context = ssl.create_default_context()
-                started = time.perf_counter()
                 with socket.create_connection((host, port), timeout=8) as sock:
                     with context.wrap_socket(sock, server_hostname=host) as secure:
-                        elapsed = (time.perf_counter() - started) * 1000
                         cert = secure.getpeercert()
-                        print(color("  ✓ اتصال TLS موثوق", GREEN),
-                              f"({elapsed:.0f} ms)")
-                        print("    البروتوكول:", secure.version())
-                        print("    التشفير:", secure.cipher()[0] if secure.cipher() else "غير معروف")
-                        subject = dict(x[0] for x in cert.get("subject", []))
-                        issuer = dict(x[0] for x in cert.get("issuer", []))
-                        print("    النطاق في الشهادة:", subject.get("commonName", "غير معروض"))
-                        print("    الجهة المصدرة:", issuer.get("commonName", "غير معروضة"))
-                        print("    صالحة حتى:", cert.get("notAfter", "غير متاح"))
+                        print_finding("سليم", "اتصال TLS موثوق — " + str(secure.version()))
+                        expiry = cert.get("notAfter")
+                        if expiry:
+                            expiry_ts = ssl.cert_time_to_seconds(expiry)
+                            days = int((expiry_ts - time.time()) / 86400)
+                            print("     صلاحية الشهادة:", expiry, "(متبقي", days, "يوم)")
+                            if days < 0:
+                                print_finding("مرتفع", "الشهادة منتهية الصلاحية")
+                            elif days < 21:
+                                print_finding("مراجعة", "الشهادة تقترب من الانتهاء")
+                        cipher = secure.cipher()
+                        if cipher:
+                            print("     مجموعة التشفير:", cipher[0])
             except Exception as exc:
-                print(color("  ✗ فشل TLS أو التحقق من الشهادة: " + str(exc), RED))
+                print_finding("مرتفع", "تعذر التحقق من TLS: " + str(exc))
         else:
-            print(color("\n  2) تخطّي TLS لأن الرابط HTTP غير مشفر.", YELLOW))
+            print_finding("مرتفع", "الرابط يستخدم HTTP غير المشفر")
+            print("     اختبر نسخة HTTPS بعد تفعيلها.")
 
-        print(color("\n  3) فحص استجابة HTTP والترويسات", BOLD + CYAN))
-        request_url = urllib.parse.urlunsplit(
-            (parsed.scheme, parsed.netloc, parsed.path or "/", parsed.query, ""))
-        request = urllib.request.Request(
-            request_url, headers={"User-Agent": "ISH-UI-Website-Checker/3.1"},
-            method="HEAD")
-        started = time.perf_counter()
+        # Main HTTP response and security headers
+        print(color("\n  3. ترويسات واستجابة HTTP", BOLD + CYAN))
         response = None
         try:
-            try:
-                response = urllib.request.urlopen(request, timeout=12)
-            except urllib.error.HTTPError as exc:
-                response = exc
-            except Exception:
-                # Some hosts reject HEAD; retry with a small GET request.
-                fallback = urllib.request.Request(
-                    request_url,
-                    headers={"User-Agent": "ISH-UI-Website-Checker/3.1"},
-                    method="GET")
-                response = urllib.request.urlopen(fallback, timeout=12)
+            started = time.perf_counter()
+            response = fetch(base, timeout=12)
             elapsed = (time.perf_counter() - started) * 1000
-            status = getattr(response, "status", response.getcode())
-            print(color("  ✓ استجابة الخادم", GREEN),
-                  "HTTP", status, f"| {elapsed:.0f} ms")
-            print("    الرابط النهائي:", response.geturl())
             headers = response.headers
-            important = [
-                ("Strict-Transport-Security", "HSTS"),
-                ("Content-Security-Policy", "CSP"),
-                ("X-Content-Type-Options", "X-Content-Type-Options"),
-                ("X-Frame-Options", "X-Frame-Options"),
-                ("Referrer-Policy", "Referrer-Policy"),
-                ("Permissions-Policy", "Permissions-Policy"),
+            status = response.getcode()
+            print("     HTTP", status, "| %.0f ms" % elapsed)
+            print("     الوجهة النهائية:", response.geturl())
+
+            required = [
+                ("Strict-Transport-Security", "HSTS", parsed.scheme == "https"),
+                ("Content-Security-Policy", "CSP", True),
+                ("X-Content-Type-Options", "X-Content-Type-Options", True),
+                ("Referrer-Policy", "Referrer-Policy", True),
+                ("Permissions-Policy", "Permissions-Policy", True),
             ]
-            print(color("\n  4) ترويسات الأمان", BOLD + CYAN))
-            for key, label in important:
+            for key, label, applicable in required:
+                if not applicable:
+                    continue
                 value = headers.get(key)
                 if value:
-                    print("  " + color("✓", GREEN), label + ":", value[:180])
+                    print_finding("سليم", label + " موجود")
                 else:
-                    print("  " + color("○", YELLOW), label + ": غير موجودة")
-            print(color("\n  معلومات الخادم", BOLD + CYAN))
-            for key in ("Content-Type", "Server", "Content-Length",
-                        "Cache-Control", "Location"):
-                value = headers.get(key)
-                if value:
-                    print("   ", key + ":", value[:180])
+                    print_finding("مراجعة", label + " غير موجود — راجع سياسة الموقع")
+
+            if parsed.scheme == "https" and not headers.get("Strict-Transport-Security"):
+                print_finding("مراجعة", "فعّل HSTS بعد التأكد من جاهزية جميع النطاقات الفرعية")
+            if headers.get("Access-Control-Allow-Origin") == "*":
+                print_finding("مراجعة", "CORS يسمح بأصل عام (*)؛ تحقق من عدم كشف بيانات حساسة")
+            server = headers.get("Server")
+            powered = headers.get("X-Powered-By")
+            if server:
+                print_finding("مراجعة", "الخادم يعلن معلومات: " + server[:100])
+            if powered:
+                print_finding("مراجعة", "X-Powered-By مكشوف: " + powered[:100])
+
+            cookies = headers.get_all("Set-Cookie") or []
+            for cookie in cookies[:10]:
+                lower = cookie.lower()
+                missing = []
+                if "secure" not in lower:
+                    missing.append("Secure")
+                if "httponly" not in lower:
+                    missing.append("HttpOnly")
+                if "samesite" not in lower:
+                    missing.append("SameSite")
+                if missing:
+                    print_finding("مراجعة", "كوكي يحتاج مراجعة خصائص: " + ", ".join(missing))
+            if not cookies:
+                print("     لم تُرسل كوكيز في الاستجابة الأولى.")
         except Exception as exc:
-            print(color("  ✗ تعذر إكمال طلب HTTP: " + str(exc), RED))
+            print_finding("مرتفع", "تعذر طلب HTTP: " + str(exc))
         finally:
             if response is not None:
                 try:
@@ -926,8 +990,23 @@ def website_inspector():
                 except Exception:
                     pass
 
-        print(color("\n  انتهى الفحص. النتائج مؤشرات أولية وليست تدقيقاً أمنياً شاملاً.",
-                    YELLOW))
+        # Verify plain HTTP redirects to HTTPS (one standard request only).
+        if parsed.scheme == "http":
+            print(color("\n  4. تحويل HTTPS", BOLD + CYAN))
+            try:
+                response = fetch(base, method="HEAD", timeout=8)
+                final_scheme = urllib.parse.urlsplit(response.geturl()).scheme
+                if final_scheme == "https":
+                    print_finding("سليم", "يتم التحويل إلى HTTPS")
+                else:
+                    print_finding("مراجعة", "لم يتم رصد تحويل إلى HTTPS")
+                response.close()
+            except Exception as exc:
+                print("     تعذر التحقق:", str(exc)[:100])
+
+        print()
+        print_finding("معلومة", "النتائج مؤشرات إعدادات وليست إثباتاً لوجود ثغرة.")
+        print_finding("معلومة", "لا يتضمن هذا الفاحص استغلالاً أو تخمين كلمات مرور أو تجاوز صلاحيات.")
         pause()
 
 
@@ -969,6 +1048,7 @@ def main():
         if arg == "--backup":
             backup_manager()
             return
+    welcome_screen()
     actions = {
         "1": package_manager,
         "2": file_manager,
