@@ -204,6 +204,7 @@ def dashboard():
     item(7, "مختبر فحص المواقع والأمن")
     item(8, "فحص النظام")
     item(18, "مختبر الأمن السيبراني المتقدم")
+    item(19, "فحص النطاقات دفعة واحدة")
     print()
     print(color("  أدوات الإنتاجية والتطوير", BOLD + CYAN))
     item(9, "محرر النصوص")
@@ -1187,6 +1188,16 @@ def security_lab():
         pause()
 
 
+def batch_site_audit():
+    """Open the batch domain audit directly from the main dashboard."""
+    try:
+        from site_audit import run as run_site_audit
+        run_site_audit()
+    except Exception as exc:
+        print(color("تعذر تشغيل الفحص الدفعي: " + str(exc), RED))
+        pause()
+
+
 def main():
     if len(sys.argv) > 1:
         arg = sys.argv[1]
@@ -1222,6 +1233,7 @@ def main():
         "16": developer_tools,
         "17": theme_manager,
         "18": security_lab,
+        "19": batch_site_audit,
     }
     while True:
         dashboard()
