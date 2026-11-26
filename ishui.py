@@ -166,7 +166,7 @@ def welcome_screen():
     frames = ["◐", "◓", "◑", "◒"]
     print()
     print(color("  ╔══════════════════════════════════╗", BOLD + CYAN))
-    print(color("  ║             ISH UI 5.3           ║", BOLD + CYAN))
+    print(color("  ║             ISH UI 5.5           ║", BOLD + CYAN))
     print(color("  ╚══════════════════════════════════╝", BOLD + CYAN))
     print()
     print(color("       أهلاً بك في مركز أدوات iSH", BOLD + WHITE))
