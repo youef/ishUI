@@ -466,8 +466,50 @@ def update_project():
         return
     if not confirm("سيتم جلب التحديثات من " + REPO + ". متابعة؟"):
         return
+
+    # Protect local edits before pulling upstream changes.
+    status = subprocess.run(
+        ["git", "-C", str(root), "status", "--porcelain"],
+        capture_output=True, text=True
+    )
+    if status.returncode != 0:
+        print(color("تعذر فحص حالة Git؛ أوقفنا التحديث حفاظاً على ملفاتك.", RED))
+        pause()
+        return
+
+    stashed = False
+    if status.stdout.strip():
+        print(color("تم العثور على تعديلات محلية. سنحفظها مؤقتاً قبل التحديث.", YELLOW))
+        stash = subprocess.run(
+            ["git", "-C", str(root), "stash", "push", "--include-untracked",
+             "-m", "ISH UI auto-update safety stash"],
+            capture_output=True, text=True
+        )
+        if stash.returncode != 0:
+            print(color("تعذر حفظ التعديلات؛ لم يتم تنفيذ التحديث.", RED))
+            if stash.stderr:
+                print(stash.stderr.strip())
+            pause()
+            return
+        stashed = "No local changes" not in (stash.stdout or "")
+
     result = subprocess.run(["git", "-C", str(root), "pull", "--ff-only"])
-    print(color("تم التحديث." if result.returncode == 0 else "فشل التحديث؛ راجع رسائل Git.", GREEN if result.returncode == 0 else RED))
+    if result.returncode != 0:
+        print(color("فشل التحديث. نحاول إعادة التعديلات المحلية.", RED))
+        if stashed:
+            subprocess.run(["git", "-C", str(root), "stash", "pop"])
+        pause()
+        return
+
+    if stashed:
+        restored = subprocess.run(["git", "-C", str(root), "stash", "pop"])
+        if restored.returncode != 0:
+            print(color("تم تحديث المشروع، لكن حدث تعارض عند استعادة تعديلاتك.", YELLOW))
+            print("تعديلاتك محفوظة في Git stash ولم تُحذف. راجعها بالأمر: git stash list")
+            pause()
+            return
+
+    print(color("تم التحديث بنجاح.", GREEN))
     pause()
 
 def settings():
