@@ -195,7 +195,8 @@ def dashboard():
     if WEB_SERVER_INFO:
         web_port, web_token = WEB_SERVER_INFO
         print(color("  لوحة الويب: http://127.0.0.1:" + str(web_port), GREEN))
-        print(color("  رمز الدخول: " + web_token, YELLOW))
+        if web_token:
+            print(color("  رمز الدخول: " + web_token, YELLOW))
     print()
     print(color("  النظام والإدارة", BOLD + CYAN))
     item(1, "مدير الحزم")
