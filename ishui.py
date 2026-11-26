@@ -14,13 +14,17 @@ import textwrap
 import json
 import socket
 import re
+import time
+import base64
+import hashlib
+import urllib.parse
 import tarfile
 import zipfile
 from pathlib import Path
 from datetime import datetime
 
 APP_NAME = "ISH UI"
-VERSION = "4.0.0"
+VERSION = "5.0.0"
 AUTHOR = "يوسف الحازمي"
 REPO = "https://github.com/youef/ishUI"
 CONFIG_DIR = Path.home() / ".config" / "ishui"
@@ -39,7 +43,7 @@ MAGENTA = "\033[95m"
 WHITE = "\033[97m"
 
 def load_config():
-    defaults = {"colors": True, "show_clock": True}
+    defaults = {"colors": True, "show_clock": True, "theme": "ocean"}
     try:
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         if CONFIG_FILE.exists():
@@ -59,10 +63,19 @@ def save_config():
     except Exception as exc:
         print("تعذر حفظ الإعدادات: " + str(exc))
 
+THEMES = {
+    "ocean": {"name": "المحيط", "cyan": "\033[96m", "blue": "\033[94m", "green": "\033[92m", "yellow": "\033[93m", "red": "\033[91m", "magenta": "\033[95m", "white": "\033[97m"},
+    "matrix": {"name": "ماتريكس", "cyan": "\033[92m", "blue": "\033[32m", "green": "\033[92m", "yellow": "\033[93m", "red": "\033[91m", "magenta": "\033[32m", "white": "\033[97m"},
+    "sunset": {"name": "الغروب", "cyan": "\033[95m", "blue": "\033[94m", "green": "\033[93m", "yellow": "\033[93m", "red": "\033[91m", "magenta": "\033[95m", "white": "\033[97m"},
+    "mono": {"name": "أحادي", "cyan": "\033[37m", "blue": "\033[90m", "green": "\033[37m", "yellow": "\033[97m", "red": "\033[97m", "magenta": "\033[90m", "white": "\033[97m"},
+}
+
 def color(value, shade=WHITE):
     if not CONFIG.get("colors", True):
         return str(value)
-    return shade + str(value) + RESET
+    theme = THEMES.get(CONFIG.get("theme", "ocean"), THEMES["ocean"])
+    key = {CYAN: "cyan", BLUE: "blue", GREEN: "green", YELLOW: "yellow", RED: "red", MAGENTA: "magenta", WHITE: "white"}.get(shade)
+    return theme.get(key, shade) + str(value) + RESET if key else shade + str(value) + RESET
 
 def clear():
     os.system("clear" if os.name != "nt" else "cls")
@@ -137,57 +150,64 @@ def storage_summary():
 
 
 def welcome_screen():
-    """Compact first-run welcome screen for narrow iSH terminals."""
+    """Animated welcome and timed 30-second progress bar."""
     clear()
+    frames = ["◐", "◓", "◑", "◒"]
     print()
-    print(color("  ISH UI", BOLD + CYAN))
-    print(color("  ──────────────────────────────", BLUE))
-    print(color("  iSH TOOLKIT  |  VERSION " + VERSION, DIM))
+    print(color("  ╔══════════════════════════════════╗", BOLD + CYAN))
+    print(color("  ║             ISH UI 5.0           ║", BOLD + CYAN))
+    print(color("  ╚══════════════════════════════════╝", BOLD + CYAN))
     print()
-    print(color("  أهلاً بك في مركز أدوات iSH", BOLD + WHITE))
-    print("  إدارة النظام والشبكة وأدوات الويب")
+    print(color("       أهلاً بك في مركز أدوات iSH", BOLD + WHITE))
+    print(color("       إدارة ذكية • تطوير • شبكات • أمن", DIM))
     print()
-    print(color("  BY يوسف الحازمي", MAGENTA))
-    print(color("  ──────────────────────────────", BLUE))
-    print(color("  اضغط Enter للانتقال إلى لوحة الأدوات", DIM))
-    try:
-        input("  ")
-    except (EOFError, KeyboardInterrupt):
-        return
-
-
+    print(color("       BY يوسف الحازمي", MAGENTA))
+    print("\n  جارٍ تجهيز بيئة العمل...")
+    for index in range(31):
+        percent = int(index * 100 / 30)
+        filled = int(index * 24 / 30)
+        bar = "█" * filled + "░" * (24 - filled)
+        sys.stdout.write("\r  " + color(frames[index % 4], CYAN) + " [" + bar + "] " + str(percent).rjust(3) + "%")
+        sys.stdout.flush()
+        if index < 30:
+            time.sleep(1)
+    print("\n")
+    print(color("  اكتمل التجهيز — مرحباً بك!", GREEN + BOLD))
+    time.sleep(0.8)
 def dashboard():
-    header()
+    header("لوحة التحكم الذكية")
     storage, percent = storage_summary()
-    print(color("النظام", BOLD + WHITE))
-    print("  " + platform.system() + "  •  Python " + platform.python_version())
-    print("  التخزين: " + storage)
+    print(color("  مركز التحكم  •  " + datetime.now().strftime("%H:%M:%S"), BOLD + WHITE))
+    print("  " + platform.system() + " / Python " + platform.python_version())
+    print("  التخزين: " + storage + (("  •  %.1f%% مستخدم" % percent) if percent else ""))
+    print("  الثيم: " + THEMES.get(CONFIG.get("theme", "ocean"), THEMES["ocean"])["name"])
     print()
-    print(color("إدارة النظام", BOLD + CYAN))
+    print(color("  النظام والإدارة", BOLD + CYAN))
     item(1, "مدير الحزم")
     item(2, "مستكشف الملفات")
     item(3, "طرفية الأوامر")
     item(4, "مراقبة النظام")
     item(5, "معلومات النظام")
     print()
-    print(color("الشبكة والأمن", BOLD + CYAN))
+    print(color("  مختبر الأمن والشبكات", BOLD + CYAN))
     item(6, "أدوات الشبكة")
-    item(7, "تدقيق الويب", "DNS / TLS / HTTP / Cookies")
+    item(7, "مختبر فحص المواقع والأمن")
     item(8, "فحص النظام")
     print()
-    print(color("الأدوات والملفات", BOLD + CYAN))
+    print(color("  أدوات الإنتاجية والتطوير", BOLD + CYAN))
     item(9, "محرر النصوص")
     item(10, "مدير العمليات")
     item(11, "مدير الخدمات")
     item(12, "النسخ الاحتياطي")
     item(13, "مدير الأرشيف")
+    item(16, "صندوق أدوات المطورين")
     print()
-    print(color("التطبيق", BOLD + CYAN))
-    item(14, "تحديث ISH UI")
+    print(color("  تخصيص وتحديث", BOLD + CYAN))
+    item(14, "التحديث الذكي")
     item(15, "الإعدادات")
+    item(17, "تغيير الثيم")
     item(0, "خروج")
-    line("─")
-
+    line()
 def package_manager():
     while True:
         header("مدير الحزم")
