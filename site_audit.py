@@ -171,6 +171,12 @@ def audit(job_id):
             print("[1/5] DNS وIP الظاهر...")
             data["addresses"] = resolve_public(host)
             save(con, job_id, "tls", key="addresses", value=data["addresses"])
+            ptr = {}
+            for address in data["addresses"]:
+                try: ptr[address] = socket.gethostbyaddr(address)[0]
+                except Exception: ptr[address] = None
+            data["reverse_dns"] = ptr
+            save(con, job_id, "tls", key="reverse_dns", value=ptr)
         row = con.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
         data = json.loads(row["results"] or "{}")
         if row["stage"] == "tls":
