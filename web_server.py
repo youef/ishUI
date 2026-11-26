@@ -244,6 +244,20 @@ class Handler(BaseHTTPRequestHandler):
     def do_HEAD(self):
         self.send_error(405)
 
+def keep_alive():
+    """Keep the local server process alive after the text dashboard exits."""
+    if _SERVER is None:
+        return
+    print("\\nخادم الويب المحلي ما زال يعمل. افتح لوحة التحكم من المتصفح.")
+    print("للإيقاف المؤقت أو الاستئناف استخدم أزرار التحكم داخل اللوحة.")
+    print("للخروج الكامل من عملية iSH اضغط Ctrl+C في هذه الجلسة.")
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        print("\\nتم إنهاء عملية خادم الويب.")
+
+
 def start():
     global _SERVER
     if _SERVER is not None:
