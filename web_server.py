@@ -95,6 +95,18 @@ def _run(args, timeout=20):
     except Exception as exc:
         return "تعذر التنفيذ: " + str(exc)[:300]
 
+def _audit_worker(job_id):
+    import contextlib
+    log_path = BASE / ("web_audit_" + str(job_id) + ".log")
+    try:
+        with log_path.open("a", encoding="utf-8") as stream:
+            with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
+                from site_audit import audit
+                audit(job_id)
+    except Exception as exc:
+        with log_path.open("a", encoding="utf-8") as stream:
+            stream.write("Audit worker error: " + str(exc)[:300] + "\\n")
+
 def _reports():
     REPORTS.mkdir(parents=True, exist_ok=True)
     rows = []
@@ -194,12 +206,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, {"output": _run(["apk", "add", package], timeout=180)})
             elif self.path == "/api/audit":
                 domain = str(data.get("domain", "")).strip()
-                from site_audit import normalize_host, load_scope, create_job, audit
+                from site_audit import normalize_host, load_scope, create_job
                 host, scheme = normalize_host(domain)
                 if host not in set(load_scope()):
                     raise ValueError("النطاق غير موجود في قائمة التصريح. أضفه من ISH UI أولاً.")
                 job_id = create_job(host, scheme)
-                threading.Thread(target=audit, args=(job_id,), daemon=True).start()
+                threading.Thread(target=_audit_worker, args=(job_id,), daemon=True).start()
                 self._json(202, {"job_id": job_id, "domain": host})
             elif self.path == "/api/report":
                 name = str(data.get("name", ""))
