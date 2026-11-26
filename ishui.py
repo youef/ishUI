@@ -1087,6 +1087,8 @@ def theme_manager():
             return
         if choice.isdigit() and 1 <= int(choice) <= len(keys):
             CONFIG["theme"] = keys[int(choice) - 1]
+            # Keep readable contrast by pairing the paper theme with a light background.
+            CONFIG["background_mode"] = "light" if CONFIG["theme"] == "paper" else "dark"
             save_config()
             clear()
             print(color("  معاينة الثيم: " + THEMES[CONFIG["theme"]]["name"], BOLD + CYAN))
