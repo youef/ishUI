@@ -20,7 +20,7 @@ from pathlib import Path
 from datetime import datetime
 
 APP_NAME = "ISH UI"
-VERSION = "3.0.0"
+VERSION = "3.1.0"
 AUTHOR = "يوسف الحازمي"
 REPO = "https://github.com/youef/ishUI"
 CONFIG_DIR = Path.home() / ".config" / "ishui"
@@ -128,7 +128,14 @@ def header(section="مركز التحكم"):
     line()
 
 def item(number, title, detail=""):
-    print(color("  [" + str(number) + "] ", BOLD + CYAN) + color(title, WHITE) +
+    icons = {
+        0: "⏻", 1: "📦", 2: "📁", 3: "⌨", 4: "📊", 5: "🌐",
+        6: "ℹ", 7: "🔄", 8: "⚙", 9: "📝", 10: "⚡", 11: "🔧",
+        12: "🛡", 13: "🗜", 14: "🩺", 15: "🔍"
+    }
+    icon = icons.get(int(number), "•")
+    print(color("  " + icon + " [" + str(number) + "] ", BOLD + CYAN) +
+          color(title, WHITE) +
           (color("  ·  " + detail, DIM) if detail else ""))
 
 def storage_summary():
@@ -168,6 +175,7 @@ def dashboard():
     item(12, "النسخ الاحتياطي", "إنشاء واستعادة نسخة مضغوطة")
     item(13, "مدير الأرشيف", "ZIP و TAR")
     item(14, "فحص النظام", "تشخيص الأدوات والبيئة")
+    item(15, "فاحص المواقع", "HTTP / HTTPS / DNS / SSL / Security Headers")
     item(0, "خروج")
     line()
 
@@ -739,6 +747,201 @@ def archive_manager():
     pause()
 
 
+
+def web_tool_manager():
+    """Check and optionally install practical website diagnostic tools."""
+    packages = [
+        ("curl", "curl", "طلبات HTTP وفحص الترويسات"),
+        ("wget", "wget", "تنزيل واختبار الوصول"),
+        ("nslookup", "bind-tools", "استعلامات DNS"),
+        ("openssl", "openssl", "فحص شهادات TLS"),
+        ("update-ca-certificates", "ca-certificates", "شهادات الجهات الموثوقة"),
+    ]
+    while True:
+        header("أدوات فحص المواقع")
+        missing = []
+        for command, package, description in packages:
+            path = shutil.which(command)
+            installed = bool(path)
+            print("  " + color("✓" if installed else "○",
+                               GREEN if installed else YELLOW) +
+                  " " + command.ljust(25) +
+                  color(description, DIM))
+            if not installed:
+                missing.append(package)
+        line()
+        item(1, "تثبيت الأدوات الناقصة", "apk add")
+        item(2, "إعادة فحص الأدوات")
+        item(0, "رجوع")
+        choice = ask("  اختيارك: ")
+        if choice == "0":
+            return
+        if choice == "2":
+            continue
+        if choice != "1":
+            continue
+        if not missing:
+            print(color("كل الأدوات المطلوبة مثبتة بالفعل.", GREEN))
+            pause()
+            continue
+        if not shutil.which("apk"):
+            print(color("مدير apk غير متاح. ثبّت الأدوات يدوياً في بيئتك.", RED))
+            pause()
+            continue
+        print("الحزم المطلوبة:", ", ".join(sorted(set(missing))))
+        if confirm("سيتم تثبيت الحزم الناقصة عبر Alpine apk. متابعة؟"):
+            result = run(["apk", "add"] + sorted(set(missing)), timeout=180)
+            show_result(result, "انتهى التثبيت دون مخرجات.")
+            print(color("أُعيد فحص الأدوات بعد التثبيت.", CYAN))
+            for command, package, description in packages:
+                ok = bool(shutil.which(command))
+                print("  " + color("✓" if ok else "—",
+                                   GREEN if ok else YELLOW) + " " + command)
+        pause()
+
+
+def website_inspector():
+    """Passive, non-destructive checks for a website supplied by the user."""
+    import time
+    import urllib.request
+    import urllib.error
+    import urllib.parse
+    import ssl
+
+    while True:
+        header("فاحص المواقع")
+        print(color("  فحص سلبي وآمن: لا يستغل الثغرات ولا يرسل حمولات هجومية.", DIM))
+        item(1, "فحص موقع", "DNS + HTTP(S) + SSL + Security Headers")
+        item(2, "إدارة أدوات الفحص", "تثبيت / التحقق من الأدوات")
+        item(0, "رجوع")
+        choice = ask("  اختيارك: ")
+        if choice == "0":
+            return
+        if choice == "2":
+            web_tool_manager()
+            continue
+        if choice != "1":
+            continue
+
+        raw = ask("  رابط الموقع (مثال: https://example.com): ")
+        if not raw:
+            continue
+        if "://" not in raw:
+            raw = "https://" + raw
+        try:
+            parsed = urllib.parse.urlsplit(raw)
+            if parsed.scheme not in ("http", "https") or not parsed.hostname:
+                raise ValueError("استخدم رابط HTTP أو HTTPS صالحاً.")
+            if parsed.username or parsed.password:
+                raise ValueError("لا تضع بيانات دخول داخل الرابط.")
+            if any(ch.isspace() for ch in raw):
+                raise ValueError("الرابط يحتوي مسافات غير صالحة.")
+            host = parsed.hostname
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        except Exception as exc:
+            print(color("رابط غير صالح: " + str(exc), RED))
+            pause()
+            continue
+
+        line()
+        print(color("  1) فحص DNS", BOLD + CYAN))
+        try:
+            started = time.perf_counter()
+            addresses = sorted(set(x[4][0] for x in socket.getaddrinfo(
+                host, port, type=socket.SOCK_STREAM)))
+            elapsed = (time.perf_counter() - started) * 1000
+            print(color("  ✓ تم حل اسم النطاق", GREEN),
+                  f"({elapsed:.0f} ms)")
+            for address in addresses[:8]:
+                print("    •", address)
+        except Exception as exc:
+            addresses = []
+            print(color("  ✗ فشل DNS: " + str(exc), RED))
+
+        if parsed.scheme == "https":
+            print(color("\n  2) فحص اتصال وشهادة TLS", BOLD + CYAN))
+            try:
+                context = ssl.create_default_context()
+                started = time.perf_counter()
+                with socket.create_connection((host, port), timeout=8) as sock:
+                    with context.wrap_socket(sock, server_hostname=host) as secure:
+                        elapsed = (time.perf_counter() - started) * 1000
+                        cert = secure.getpeercert()
+                        print(color("  ✓ اتصال TLS موثوق", GREEN),
+                              f"({elapsed:.0f} ms)")
+                        print("    البروتوكول:", secure.version())
+                        print("    التشفير:", secure.cipher()[0] if secure.cipher() else "غير معروف")
+                        subject = dict(x[0] for x in cert.get("subject", []))
+                        issuer = dict(x[0] for x in cert.get("issuer", []))
+                        print("    النطاق في الشهادة:", subject.get("commonName", "غير معروض"))
+                        print("    الجهة المصدرة:", issuer.get("commonName", "غير معروضة"))
+                        print("    صالحة حتى:", cert.get("notAfter", "غير متاح"))
+            except Exception as exc:
+                print(color("  ✗ فشل TLS أو التحقق من الشهادة: " + str(exc), RED))
+        else:
+            print(color("\n  2) تخطّي TLS لأن الرابط HTTP غير مشفر.", YELLOW))
+
+        print(color("\n  3) فحص استجابة HTTP والترويسات", BOLD + CYAN))
+        request_url = urllib.parse.urlunsplit(
+            (parsed.scheme, parsed.netloc, parsed.path or "/", parsed.query, ""))
+        request = urllib.request.Request(
+            request_url, headers={"User-Agent": "ISH-UI-Website-Checker/3.1"},
+            method="HEAD")
+        started = time.perf_counter()
+        response = None
+        try:
+            try:
+                response = urllib.request.urlopen(request, timeout=12)
+            except urllib.error.HTTPError as exc:
+                response = exc
+            except Exception:
+                # Some hosts reject HEAD; retry with a small GET request.
+                fallback = urllib.request.Request(
+                    request_url,
+                    headers={"User-Agent": "ISH-UI-Website-Checker/3.1"},
+                    method="GET")
+                response = urllib.request.urlopen(fallback, timeout=12)
+            elapsed = (time.perf_counter() - started) * 1000
+            status = getattr(response, "status", response.getcode())
+            print(color("  ✓ استجابة الخادم", GREEN),
+                  "HTTP", status, f"| {elapsed:.0f} ms")
+            print("    الرابط النهائي:", response.geturl())
+            headers = response.headers
+            important = [
+                ("Strict-Transport-Security", "HSTS"),
+                ("Content-Security-Policy", "CSP"),
+                ("X-Content-Type-Options", "X-Content-Type-Options"),
+                ("X-Frame-Options", "X-Frame-Options"),
+                ("Referrer-Policy", "Referrer-Policy"),
+                ("Permissions-Policy", "Permissions-Policy"),
+            ]
+            print(color("\n  4) ترويسات الأمان", BOLD + CYAN))
+            for key, label in important:
+                value = headers.get(key)
+                if value:
+                    print("  " + color("✓", GREEN), label + ":", value[:180])
+                else:
+                    print("  " + color("○", YELLOW), label + ": غير موجودة")
+            print(color("\n  معلومات الخادم", BOLD + CYAN))
+            for key in ("Content-Type", "Server", "Content-Length",
+                        "Cache-Control", "Location"):
+                value = headers.get(key)
+                if value:
+                    print("   ", key + ":", value[:180])
+        except Exception as exc:
+            print(color("  ✗ تعذر إكمال طلب HTTP: " + str(exc), RED))
+        finally:
+            if response is not None:
+                try:
+                    response.close()
+                except Exception:
+                    pass
+
+        print(color("\n  انتهى الفحص. النتائج مؤشرات أولية وليست تدقيقاً أمنياً شاملاً.",
+                    YELLOW))
+        pause()
+
+
 def system_diagnostics():
     header("فحص النظام")
     checks = [
@@ -792,6 +995,7 @@ def main():
         "12": backup_manager,
         "13": archive_manager,
         "14": system_diagnostics,
+        "15": website_inspector,
     }
     while True:
         dashboard()
