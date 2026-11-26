@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import datetime
 
 APP_NAME = "ISH UI"
-VERSION = "5.2.0"
+VERSION = "5.3.0"
 AUTHOR = "يوسف الحازمي"
 REPO = "https://github.com/youef/ishUI"
 CONFIG_DIR = Path.home() / ".config" / "ishui"
@@ -165,7 +165,7 @@ def welcome_screen():
     frames = ["◐", "◓", "◑", "◒"]
     print()
     print(color("  ╔══════════════════════════════════╗", BOLD + CYAN))
-    print(color("  ║             ISH UI 5.1           ║", BOLD + CYAN))
+    print(color("  ║             ISH UI 5.3           ║", BOLD + CYAN))
     print(color("  ╚══════════════════════════════════╝", BOLD + CYAN))
     print()
     print(color("       أهلاً بك في مركز أدوات iSH", BOLD + WHITE))
