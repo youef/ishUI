@@ -43,7 +43,7 @@ MAGENTA = "\033[95m"
 WHITE = "\033[97m"
 
 def load_config():
-    defaults = {"colors": True, "show_clock": True, "theme": "ocean"}
+    defaults = {"colors": True, "show_clock": True, "theme": "ocean", "background_mode": "dark"}
     try:
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         if CONFIG_FILE.exists():
@@ -64,21 +64,32 @@ def save_config():
         print("تعذر حفظ الإعدادات: " + str(exc))
 
 THEMES = {
-    "ocean": {"name": "المحيط", "cyan": "\033[96m", "blue": "\033[94m", "green": "\033[92m", "yellow": "\033[93m", "red": "\033[91m", "magenta": "\033[95m", "white": "\033[97m"},
+    "ocean": {"name": "المحيط الداكن", "cyan": "\033[96m", "blue": "\033[94m", "green": "\033[92m", "yellow": "\033[93m", "red": "\033[91m", "magenta": "\033[95m", "white": "\033[97m"},
     "matrix": {"name": "ماتريكس", "cyan": "\033[92m", "blue": "\033[32m", "green": "\033[92m", "yellow": "\033[93m", "red": "\033[91m", "magenta": "\033[32m", "white": "\033[97m"},
     "sunset": {"name": "الغروب", "cyan": "\033[95m", "blue": "\033[94m", "green": "\033[93m", "yellow": "\033[93m", "red": "\033[91m", "magenta": "\033[95m", "white": "\033[97m"},
-    "mono": {"name": "أحادي", "cyan": "\033[37m", "blue": "\033[90m", "green": "\033[37m", "yellow": "\033[97m", "red": "\033[97m", "magenta": "\033[90m", "white": "\033[97m"},
+    "mono": {"name": "أحادي داكن", "cyan": "\033[37m", "blue": "\033[90m", "green": "\033[37m", "yellow": "\033[97m", "red": "\033[97m", "magenta": "\033[90m", "white": "\033[97m"},
+    "paper": {"name": "ورقي فاتح", "cyan": "\033[36m", "blue": "\033[34m", "green": "\033[32m", "yellow": "\033[33m", "red": "\033[31m", "magenta": "\033[35m", "white": "\033[30m"},
 }
 
 def color(value, shade=WHITE):
     if not CONFIG.get("colors", True):
         return str(value)
     theme = THEMES.get(CONFIG.get("theme", "ocean"), THEMES["ocean"])
-    key = {CYAN: "cyan", BLUE: "blue", GREEN: "green", YELLOW: "yellow", RED: "red", MAGENTA: "magenta", WHITE: "white"}.get(shade)
-    return theme.get(key, shade) + str(value) + RESET if key else shade + str(value) + RESET
+    shade_map = {CYAN: "cyan", BLUE: "blue", GREEN: "green", YELLOW: "yellow", RED: "red", MAGENTA: "magenta", WHITE: "white"}
+    key = next((name for code, name in shade_map.items() if code in shade), None)
+    emphasis = "".join(code for code in (BOLD, DIM) if code in shade)
+    foreground = theme.get(key, "") if key else ""
+    mode = CONFIG.get("background_mode", "dark")
+    background = "\033[40m" if mode == "dark" else ("\033[47m" if mode == "light" else "")
+    if mode == "light" and key == "white":
+        foreground = "\033[30m"
+    return emphasis + background + foreground + str(value) + RESET + background
 
 def clear():
-    os.system("clear" if os.name != "nt" else "cls")
+    mode = CONFIG.get("background_mode", "dark")
+    background = "\033[40m" if mode == "dark" else ("\033[47m" if mode == "light" else "\033[0m")
+    sys.stdout.write(background + "\033[2J\033[H")
+    sys.stdout.flush()
 
 def width():
     return max(32, min(shutil.get_terminal_size((80, 24)).columns, 88))
@@ -551,9 +562,14 @@ def update_project():
 
 def settings():
     while True:
-        header("الإعدادات")
-        item(1, "تبديل الألوان", "الحالة الحالية: " + ("مفعلة" if CONFIG.get("colors") else "متوقفة"))
-        item(2, "تبديل الساعة", "الحالة الحالية: " + ("ظاهرة" if CONFIG.get("show_clock") else "مخفية"))
+        header("الإعدادات والمظهر")
+        mode = CONFIG.get("background_mode", "dark")
+        mode_label = {"dark": "داكن — خلفية سوداء", "light": "فاتح — خلفية بيضاء", "terminal": "حسب إعداد الطرفية"}.get(mode, "داكن")
+        theme_name = THEMES.get(CONFIG.get("theme", "ocean"), THEMES["ocean"])["name"]
+        item(1, "تبديل ألوان النصوص", "الحالة: " + ("مفعلة" if CONFIG.get("colors") else "متوقفة"))
+        item(2, "تبديل الساعة", "الحالة: " + ("ظاهرة" if CONFIG.get("show_clock") else "مخفية"))
+        item(3, "تغيير الخلفية", "الحالية: " + mode_label)
+        item(4, "اختيار الثيم والألوان", "الحالي: " + theme_name)
         item(0, "رجوع")
         line()
         choice = ask("  اختيارك: ")
@@ -563,12 +579,17 @@ def settings():
             CONFIG["colors"] = not CONFIG.get("colors", True)
         elif choice == "2":
             CONFIG["show_clock"] = not CONFIG.get("show_clock", True)
+        elif choice == "3":
+            modes = ["dark", "light", "terminal"]
+            CONFIG["background_mode"] = modes[(modes.index(mode) + 1) % len(modes)]
+        elif choice == "4":
+            theme_manager()
+            continue
         else:
             continue
         save_config()
-        print(color("تم حفظ الإعدادات.", GREEN))
+        print(color("تم حفظ الإعدادات. سيظهر التغيير على كامل الشاشة بعد إعادة رسمها.", GREEN))
         pause()
-
 
 
 def text_editor():
@@ -1055,7 +1076,7 @@ def system_diagnostics():
 
 def theme_manager():
     while True:
-        header("الثيمات")
+        header("الثيمات والألوان")
         keys = list(THEMES.keys())
         for i, key in enumerate(keys, 1):
             current = "  ✓ الحالي" if CONFIG.get("theme") == key else ""
@@ -1067,6 +1088,11 @@ def theme_manager():
         if choice.isdigit() and 1 <= int(choice) <= len(keys):
             CONFIG["theme"] = keys[int(choice) - 1]
             save_config()
+            clear()
+            print(color("  معاينة الثيم: " + THEMES[CONFIG["theme"]]["name"], BOLD + CYAN))
+            print(color("  نص أبيض/ملون على خلفية داكنة أو فاتحة", WHITE))
+            print(color("  عناوين • نجاح • تحذير • تنبيه", GREEN))
+            print(color("  1234567890  ABC abc  العربية", YELLOW))
             print(color("تم تطبيق الثيم وحفظه.", GREEN))
         else:
             print(color("اختيار غير صحيح.", RED))
