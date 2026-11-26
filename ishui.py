@@ -24,11 +24,12 @@ from pathlib import Path
 from datetime import datetime
 
 APP_NAME = "ISH UI"
-VERSION = "5.4.0"
+VERSION = "5.5.0"
 AUTHOR = "يوسف الحازمي"
 REPO = "https://github.com/youef/ishUI"
 CONFIG_DIR = Path.home() / ".config" / "ishui"
 CONFIG_FILE = CONFIG_DIR / "config.json"
+WEB_SERVER_INFO = None
 HISTORY_FILE = CONFIG_DIR / "history.txt"
 
 RESET = "\033[0m"
@@ -191,6 +192,10 @@ def dashboard():
     print("  " + platform.system() + " / Python " + platform.python_version())
     print("  التخزين: " + storage + (("  •  %.1f%% مستخدم" % percent) if percent else ""))
     print("  الثيم: " + THEMES.get(CONFIG.get("theme", "ocean"), THEMES["ocean"])["name"])
+    if WEB_SERVER_INFO:
+        web_port, web_token = WEB_SERVER_INFO
+        print(color("  لوحة الويب: http://127.0.0.1:" + str(web_port), GREEN))
+        print(color("  رمز الدخول: " + web_token, YELLOW))
     print()
     print(color("  النظام والإدارة", BOLD + CYAN))
     item(1, "مدير الحزم")
@@ -1214,6 +1219,14 @@ def main():
             backup_manager()
             return
     welcome_screen()
+    global WEB_SERVER_INFO
+    try:
+        from web_server import start as start_web_server
+        WEB_SERVER_INFO = start_web_server()
+    except Exception as exc:
+        WEB_SERVER_INFO = None
+        print(color("تعذر تشغيل خادم الويب المحلي: " + str(exc), YELLOW))
+        time.sleep(1.5)
     actions = {
         "1": package_manager,
         "2": file_manager,
