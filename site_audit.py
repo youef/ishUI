@@ -140,7 +140,7 @@ class SafeRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         p = urllib.parse.urlsplit(newurl)
         target_port = p.port or (443 if p.scheme == "https" else 80)
-        if p.hostname != self.host or p.scheme not in ("http", "https") or target_port != self.port:
+        if p.hostname != self.host or p.scheme not in ("http", "https") or target_port not in (80, 443):
             raise urllib.error.HTTPError(newurl, code, "تم رفض تحويل خارج المضيف/المنفذ المحدد", headers, fp)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
