@@ -68,7 +68,7 @@ def clear():
     os.system("clear" if os.name != "nt" else "cls")
 
 def width():
-    return max(44, min(shutil.get_terminal_size((80, 24)).columns, 100))
+    return max(32, min(shutil.get_terminal_size((80, 24)).columns, 88))
 
 def line(char="─"):
     print(color(char * width(), BLUE))
