@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import datetime
 
 APP_NAME = "ISH UI"
-VERSION = "5.1.0"
+VERSION = "5.2.0"
 AUTHOR = "يوسف الحازمي"
 REPO = "https://github.com/youef/ishUI"
 CONFIG_DIR = Path.home() / ".config" / "ishui"
@@ -203,6 +203,7 @@ def dashboard():
     item(6, "أدوات الشبكة")
     item(7, "مختبر فحص المواقع والأمن")
     item(8, "فحص النظام")
+    item(18, "مختبر الأمن السيبراني المتقدم")
     print()
     print(color("  أدوات الإنتاجية والتطوير", BOLD + CYAN))
     item(9, "محرر النصوص")
@@ -1176,6 +1177,16 @@ def developer_tools():
             print(color("اختيار غير صحيح.", RED))
         pause()
 
+def security_lab():
+    """Launch the optional standard-library security tools module."""
+    try:
+        from security_tools import run as run_security_lab
+        run_security_lab()
+    except Exception as exc:
+        print(color("تعذر تشغيل مختبر الأمن: " + str(exc), RED))
+        pause()
+
+
 def main():
     if len(sys.argv) > 1:
         arg = sys.argv[1]
@@ -1210,6 +1221,7 @@ def main():
         "15": settings,
         "16": developer_tools,
         "17": theme_manager,
+        "18": security_lab,
     }
     while True:
         dashboard()
