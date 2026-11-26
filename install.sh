@@ -33,6 +33,6 @@ if ! grep -Fq '.local/bin' "$PROFILE"; then
 fi
 
 echo ""
-echo "ISH UI 3.0 installed."
+echo "ISH UI 3.1 installed."
 echo 'If needed, run: export PATH="$HOME/.local/bin:$PATH"'
 echo "Launch with: ishui"
